@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 서울시 지하철 OpenAPI가 HTTP만 제공하므로 이 호스트에만 평문 통신을 허용한다. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">swopenapi.seoul.go.kr</domain>
+    </domain-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">openapi.seoul.go.kr</domain>
+    </domain-config>
+</network-security-config>

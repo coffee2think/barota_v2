@@ -1,0 +1,399 @@
+package com.gilbit.barota.ui.arrival
+
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Train
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gilbit.barota.data.model.TrainArrival
+import com.gilbit.barota.data.model.DestinationStopStatus
+import com.gilbit.barota.BuildConfig
+import com.gilbit.barota.ui.selection.LineBadges
+
+@Composable
+fun ArrivalRoute(
+    originName: String,
+    originLines: List<String>,
+    destinationName: String,
+    destinationLines: List<String>,
+    onBack: () -> Unit,
+    viewModel: ArrivalViewModel = hiltViewModel(),
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(originName, destinationName) {
+        viewModel.load(originName, destinationName)
+    }
+
+    ArrivalScreen(
+        originName = originName,
+        originLines = originLines,
+        destinationName = destinationName,
+        destinationLines = destinationLines,
+        uiState = uiState,
+        onBack = onBack,
+        onRefresh = { viewModel.refresh(originName, destinationName) },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ArrivalScreen(
+    originName: String,
+    originLines: List<String>,
+    destinationName: String,
+    destinationLines: List<String>,
+    uiState: ArrivalUiState,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    var debugStopStatus by remember { mutableStateOf(DestinationStopStatus.UNKNOWN) }
+    val previewStatus = debugStopStatus.takeUnless { it == DestinationStopStatus.UNKNOWN }
+    val nearestArrival = uiState.arrivals.minByOrNull { it.arrivalSeconds ?: Int.MAX_VALUE }
+    val screenStopStatus = previewStatus
+        ?: nearestArrival?.destinationStopStatus
+        ?: DestinationStopStatus.UNKNOWN
+    val warningPulse = rememberInfiniteTransition(label = "미정차 경고 점멸")
+    val flashingRed by warningPulse.animateColor(
+        initialValue = Color(0xFFFFDAD6),
+        targetValue = Color(0xFFFF8A80),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 700),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "미정차 빨간 배경",
+    )
+    val screenBackgroundColor = when (screenStopStatus) {
+        DestinationStopStatus.STOPS -> Color(0xFFDDF6E8)
+        DestinationStopStatus.DOES_NOT_STOP -> flashingRed
+        DestinationStopStatus.UNKNOWN -> MaterialTheme.colorScheme.background
+    }
+
+    Scaffold(
+        modifier = Modifier.testTag(
+            when (screenStopStatus) {
+                DestinationStopStatus.STOPS -> "arrival-screen-green"
+                DestinationStopStatus.DOES_NOT_STOP -> "arrival-screen-red-flashing"
+                DestinationStopStatus.UNKNOWN -> "arrival-screen-default"
+            },
+        ),
+        containerColor = screenBackgroundColor,
+        topBar = {
+            TopAppBar(
+                title = { Text("실시간 도착정보", fontWeight = FontWeight.Bold) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = screenBackgroundColor,
+                    scrolledContainerColor = screenBackgroundColor,
+                ),
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "뒤로가기")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onRefresh, enabled = !uiState.isLoading) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = "도착정보 새로고침")
+                    }
+                },
+            )
+        },
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(innerPadding),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                RouteHeader(
+                    originName = originName,
+                    originLines = originLines,
+                    destinationName = destinationName,
+                    destinationLines = destinationLines,
+                    updatedAt = uiState.updatedAt,
+                )
+            }
+
+            if (BuildConfig.DEBUG) {
+                item {
+                    StopDecisionTestControls(
+                        selectedStatus = debugStopStatus,
+                        onStatusSelected = { debugStopStatus = it },
+                    )
+                }
+                item {
+                    Text(
+                        "테스트용 열차 카드",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                item {
+                    ArrivalCard(
+                        arrival = debugTrainArrival,
+                        previewStatus = previewStatus,
+                        flashingRed = flashingRed,
+                    )
+                }
+            }
+
+            when {
+                uiState.isLoading && uiState.arrivals.isEmpty() -> item {
+                    Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                }
+
+                uiState.errorMessage != null && uiState.arrivals.isEmpty() -> item {
+                    MessageCard(uiState.errorMessage, onRefresh)
+                }
+
+                uiState.arrivals.isEmpty() -> item {
+                    MessageCard("현재 $originName 도착정보가 없습니다.", onRefresh)
+                }
+
+                else -> {
+                    item {
+                        Text(
+                            "${originName}으로 들어오는 열차",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                    items(uiState.arrivals, key = TrainArrival::id) { arrival ->
+                        ArrivalCard(
+                            arrival = arrival,
+                            previewStatus = previewStatus,
+                            flashingRed = flashingRed,
+                        )
+                    }
+                    if (uiState.errorMessage != null) {
+                        item { MessageCard(uiState.errorMessage, onRefresh) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private val debugTrainArrival = TrainArrival(
+    id = "debug-arrival",
+    trainNumber = "TEST-200",
+    line = "2호선",
+    direction = "내선",
+    terminalStation = "성수",
+    arrivalMessage = "3분 20초 후",
+    currentLocation = "역삼 출발",
+    arrivalSeconds = 200,
+    trainType = "일반",
+    isLastTrain = false,
+    receivedAt = "테스트 데이터",
+)
+
+@Composable
+private fun StopDecisionTestControls(
+    selectedStatus: DestinationStopStatus,
+    onStatusSelected: (DestinationStopStatus) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        shape = RoundedCornerShape(20.dp),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("정차 여부 UX 테스트", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "실제 운행 열차가 없어도 열차 카드의 상태를 바꿔볼 수 있어요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            OutlinedButton(
+                onClick = { onStatusSelected(DestinationStopStatus.STOPS) },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = selectedStatus != DestinationStopStatus.STOPS,
+            ) { Text("정차 · 초록 카드 테스트") }
+            OutlinedButton(
+                onClick = { onStatusSelected(DestinationStopStatus.DOES_NOT_STOP) },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = selectedStatus != DestinationStopStatus.DOES_NOT_STOP,
+            ) { Text("미정차 · 빨강 점멸 테스트") }
+            OutlinedButton(
+                onClick = { onStatusSelected(DestinationStopStatus.UNKNOWN) },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = selectedStatus != DestinationStopStatus.UNKNOWN,
+            ) { Text("판정 표시 해제") }
+        }
+    }
+}
+
+@Composable
+private fun RouteHeader(
+    originName: String,
+    originLines: List<String>,
+    destinationName: String,
+    destinationLines: List<String>,
+    updatedAt: String?,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        shape = RoundedCornerShape(20.dp),
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("출발", style = MaterialTheme.typography.labelMedium)
+                    Text(originName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    LineBadges(originLines)
+                }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("도착", style = MaterialTheme.typography.labelMedium)
+                    Text(destinationName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    LineBadges(destinationLines)
+                }
+            }
+            Text(
+                updatedAt?.let { "데이터 수신 시각 $it" } ?: "서울시 실시간 데이터를 조회합니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ArrivalCard(
+    arrival: TrainArrival,
+    previewStatus: DestinationStopStatus? = null,
+    flashingRed: Color,
+) {
+    val stopStatus = previewStatus ?: arrival.destinationStopStatus
+    val containerColor = when (stopStatus) {
+        DestinationStopStatus.STOPS -> Color(0xFFDDF6E8)
+        DestinationStopStatus.DOES_NOT_STOP -> flashingRed
+        DestinationStopStatus.UNKNOWN -> MaterialTheme.colorScheme.surfaceContainer
+    }
+    val contentColor = when (stopStatus) {
+        DestinationStopStatus.STOPS -> Color(0xFF075E38)
+        DestinationStopStatus.DOES_NOT_STOP -> Color(0xFF681411)
+        DestinationStopStatus.UNKNOWN -> MaterialTheme.colorScheme.onSurface
+    }
+    val cardTag = when (stopStatus) {
+        DestinationStopStatus.STOPS -> "arrival-card-green"
+        DestinationStopStatus.DOES_NOT_STOP -> "arrival-card-red-flashing"
+        DestinationStopStatus.UNKNOWN -> "arrival-card-unknown"
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth().testTag(cardTag),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor, contentColor = contentColor),
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (stopStatus != DestinationStopStatus.UNKNOWN) {
+                Text(
+                    if (stopStatus == DestinationStopStatus.STOPS) {
+                        "😊 목적지 정차 · 타도 돼요"
+                    } else {
+                        "😠 목적지 미정차 · 타면 안 돼요"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = contentColor,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(Icons.Rounded.Train, contentDescription = null, tint = contentColor)
+                LineBadges(listOf(arrival.line))
+                Text(
+                    arrival.direction,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Text(
+                arrival.arrivalMessage,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = contentColor,
+            )
+            if (arrival.currentLocation.isNotBlank()) {
+                Text(arrival.currentLocation, color = contentColor)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (arrival.terminalStation.isNotBlank()) {
+                    AssistChip(onClick = {}, label = { Text("${arrival.terminalStation}행") })
+                }
+                if (arrival.trainType.isNotBlank() && arrival.trainType != "일반") {
+                    AssistChip(onClick = {}, label = { Text(arrival.trainType) })
+                }
+                if (arrival.isLastTrain) {
+                    AssistChip(onClick = {}, label = { Text("막차") })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageCard(message: String, onRetry: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
+            Button(onClick = onRetry) { Text("다시 시도") }
+        }
+    }
+}

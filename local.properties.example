@@ -1,0 +1,4 @@
+# 이 파일을 local.properties로 복사한 뒤 발급받은 키를 입력하세요.
+# local.properties는 .gitignore에 포함되어 버전 관리되지 않습니다.
+SEOUL_SUBWAY_API_KEY=YOUR_API_KEY
+SEOUL_TIMETABLE_API_KEY=YOUR_TIMETABLE_API_KEY
