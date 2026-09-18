@@ -1,12 +1,19 @@
 package com.gilbit.barota.data.repository
 
-import com.gilbit.barota.BuildConfig
+import com.gilbit.barota.domain.DirectionalRoute
+import com.gilbit.barota.domain.RouteDirectionResolver
+import com.gilbit.barota.domain.TravelDirection
+import com.gilbit.barota.domain.normalizeArrivalTime
+import com.gilbit.barota.domain.orderIncomingArrivals
+import com.gilbit.barota.data.model.ArrivalState
 import com.gilbit.barota.data.model.TrainArrival
 import com.gilbit.barota.data.remote.RealtimeArrivalDto
 import com.gilbit.barota.data.remote.SeoulSubwayApi
 import javax.inject.Inject
+import javax.inject.Named
 import javax.inject.Singleton
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -15,24 +22,37 @@ import kotlinx.coroutines.sync.withPermit
 class SeoulArrivalRepository @Inject constructor(
     private val api: SeoulSubwayApi,
     private val trainStopRepository: TrainStopRepository,
+    @Named("subwayApiKey") private val apiKey: String,
 ) : ArrivalRepository {
-    override suspend fun getArrivals(stationName: String, destinationName: String): List<TrainArrival> {
-        if (BuildConfig.SEOUL_SUBWAY_API_KEY.isBlank()) throw MissingApiKeyException()
+    override suspend fun getArrivals(route: DirectionalRoute): List<TrainArrival> {
+        if (apiKey.isBlank()) throw MissingApiKeyException()
 
         val response = api.getRealtimeArrivals(
-            apiKey = BuildConfig.SEOUL_SUBWAY_API_KEY,
-            stationName = stationName.removeSuffix("역"),
+            apiKey = apiKey,
+            stationName = RouteDirectionResolver.apiStationName(route.originName),
         )
         val resultCode = response.errorMessage?.code ?: response.code.orEmpty()
         val resultMessage = response.errorMessage?.message ?: response.message.orEmpty()
+        if (resultCode == "INFO-200") return emptyList()
         if (resultCode.isNotBlank() && resultCode != "INFO-000") {
             throw SeoulApiException(resultMessage.ifBlank { "서울시 API 요청에 실패했습니다. ($resultCode)" })
         }
 
-        val arrivals = response.realtimeArrivalList
-            .filter { it.statnNm.removeSuffix("역") == stationName.removeSuffix("역") }
-            .map(RealtimeArrivalDto::toDomain)
-            .sortedWith(compareBy<TrainArrival> { it.line }.thenBy { it.direction }.thenBy { it.arrivalSeconds ?: Int.MAX_VALUE })
+        val stationLineRows = response.realtimeArrivalList
+            .filter {
+                RouteDirectionResolver.canonicalName(it.statnNm) == route.originName &&
+                    it.subwayId == route.subwayId
+            }
+        val filteredRows = stationLineRows.filter { TravelDirection.fromArrivalApi(it.updnLine) == route.direction }
+        val allowedDirections = if (route.direction in setOf(TravelDirection.INNER, TravelDirection.OUTER)) {
+            setOf(TravelDirection.INNER, TravelDirection.OUTER)
+        } else {
+            setOf(TravelDirection.UP, TravelDirection.DOWN)
+        }
+        if (filteredRows.isEmpty() && stationLineRows.any { TravelDirection.fromArrivalApi(it.updnLine) !in allowedDirections }) {
+            throw ArrivalDirectionUnknownException()
+        }
+        val arrivals = orderIncomingArrivals(filteredRows.map(RealtimeArrivalDto::toDomain))
 
         return supervisorScope {
             val timetableConcurrency = Semaphore(4)
@@ -42,10 +62,13 @@ class SeoulArrivalRepository @Inject constructor(
                         runCatching {
                             trainStopRepository.getDestinationStopStatus(
                                 arrival = arrival,
-                                originName = stationName,
-                                destinationName = destinationName,
+                                originName = route.originName,
+                                destinationName = route.destinationName,
                             )
-                        }.getOrDefault(com.gilbit.barota.data.model.DestinationStopStatus.UNKNOWN)
+                        }.getOrElse { error ->
+                            if (error is CancellationException) throw error
+                            com.gilbit.barota.data.model.DestinationStopStatus.UNKNOWN
+                        }
                     }
                     arrival.copy(destinationStopStatus = status)
                 }
@@ -54,19 +77,26 @@ class SeoulArrivalRepository @Inject constructor(
     }
 }
 
-private fun RealtimeArrivalDto.toDomain() = TrainArrival(
-    id = listOf(subwayId, updnLine, btrainNo, rowNum).joinToString("-"),
-    trainNumber = btrainNo,
-    line = subwayLineName(subwayId),
-    direction = updnLine.ifBlank { trainLineNm.substringAfterLast("-").trim() },
-    terminalStation = bstatnNm.ifBlank { trainLineNm.substringBefore("행").trim() },
-    arrivalMessage = arvlMsg2.ifBlank { arrivalTimeMessage(barvlDt.toIntOrNull()) },
-    currentLocation = arvlMsg3,
-    arrivalSeconds = barvlDt.toIntOrNull(),
-    trainType = btrainSttus.ifBlank { "일반" },
-    isLastTrain = lstcarAt == "1",
-    receivedAt = recptnDt,
-)
+private fun RealtimeArrivalDto.toDomain(): TrainArrival {
+    val state = ArrivalState.fromApi(arvlCd)
+    val time = normalizeArrivalTime(barvlDt, state)
+    return TrainArrival(
+        id = listOf(subwayId, updnLine, btrainNo, rowNum).joinToString("-"),
+        trainNumber = btrainNo,
+        line = subwayLineName(subwayId),
+        direction = updnLine.trim(),
+        terminalStation = bstatnNm.ifBlank { trainLineNm.substringBefore("행").trim() },
+        arrivalMessage = arvlMsg2.ifBlank { arrivalTimeMessage(time.seconds) },
+        currentLocation = arvlMsg3,
+        arrivalSeconds = time.seconds,
+        trainType = btrainSttus.ifBlank { "일반" },
+        isLastTrain = lstcarAt == "1",
+        receivedAt = recptnDt,
+        arrivalState = state,
+        arrivalOrderKey = ordkey,
+        arrivalTimeKind = time.kind,
+    )
+}
 
 private fun arrivalTimeMessage(seconds: Int?): String = when {
     seconds == null -> "도착시간 확인 중"

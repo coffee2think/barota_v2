@@ -8,6 +8,9 @@ import androidx.compose.ui.test.performScrollTo
 import com.gilbit.barota.data.model.DestinationStopStatus
 import com.gilbit.barota.data.model.TrainArrival
 import com.gilbit.barota.ui.theme.SubwayBarotaTheme
+import com.gilbit.barota.domain.RouteDirectionResolver
+import com.gilbit.barota.domain.RouteDirectionResult
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
@@ -48,7 +51,7 @@ class ArrivalScreenTest {
     }
 
     @Test
-    fun screenUsesDestinationStatusOfNearestArrival() {
+    fun screenUsesDestinationStatusOfFirstFinalListItemWithoutReordering() {
         composeRule.setContent {
             SubwayBarotaTheme(dynamicColor = false) {
                 ArrivalScreen(
@@ -68,7 +71,65 @@ class ArrivalScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag("arrival-screen-red-flashing").assertExists()
+        composeRule.onNodeWithTag("arrival-screen-green").assertExists()
+    }
+
+    @Test
+    fun doksanRouteShowsUpDirectionAndDirectionSpecificEmptyResult() {
+        val resolution = RouteDirectionResolver().resolve(
+            "독산", "종로3가", listOf("1호선"), listOf("1호선", "3호선", "5호선"),
+        )
+        composeRule.setContent {
+            SubwayBarotaTheme(dynamicColor = false) {
+                ArrivalScreen(
+                    originName = "독산", originLines = listOf("1호선"),
+                    destinationName = "종로3가", destinationLines = listOf("1호선", "3호선", "5호선"),
+                    uiState = ArrivalUiState(routeDirection = resolution),
+                    onBack = {}, onRefresh = {},
+                )
+            }
+        }
+        composeRule.onNodeWithText("1호선 · 상행 열차만 표시합니다.").assertExists()
+        composeRule.onNodeWithText("현재 1호선 상행 도착정보가 없습니다.").performScrollTo().assertExists()
+    }
+
+    @Test
+    fun lineSelectionIsExplicitAndDoesNotShowNormalEmptyResult() {
+        var selected: String? = null
+        composeRule.setContent {
+            SubwayBarotaTheme(dynamicColor = false) {
+                ArrivalScreen(
+                    originName = "시청", originLines = listOf("1호선", "2호선"),
+                    destinationName = "신도림", destinationLines = listOf("1호선", "2호선"),
+                    uiState = ArrivalUiState(
+                        routeDirection = RouteDirectionResult.LineSelectionRequired(listOf("1호선", "2호선")),
+                        commonLines = listOf("1호선", "2호선"),
+                    ),
+                    onBack = {}, onRefresh = {}, onSelectLine = { selected = it },
+                )
+            }
+        }
+        composeRule.onNodeWithText("조회할 공통 노선을 선택해 주세요.").assertExists()
+        composeRule.onNodeWithText("현재 시청 도착정보가 없습니다.").assertDoesNotExist()
+        composeRule.onNodeWithTag("route-line-2호선").performClick()
+        composeRule.runOnIdle { assertEquals("2호선", selected) }
+    }
+
+    @Test
+    fun unsupportedRouteHasDistinctNoticeInsteadOfNormalEmptyResult() {
+        val message = "방향을 확인할 수 없는 경로입니다."
+        composeRule.setContent {
+            SubwayBarotaTheme(dynamicColor = false) {
+                ArrivalScreen(
+                    originName = "독산", originLines = listOf("1호선"),
+                    destinationName = "강남", destinationLines = listOf("2호선"),
+                    uiState = ArrivalUiState(routeDirection = RouteDirectionResult.Unsupported(message)),
+                    onBack = {}, onRefresh = {},
+                )
+            }
+        }
+        composeRule.onNodeWithText(message).assertExists()
+        composeRule.onNodeWithText("현재 독산 도착정보가 없습니다.").assertDoesNotExist()
     }
 
     private fun arrival(

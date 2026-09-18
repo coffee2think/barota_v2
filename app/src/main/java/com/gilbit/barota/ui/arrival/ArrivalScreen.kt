@@ -54,6 +54,8 @@ import com.gilbit.barota.data.model.TrainArrival
 import com.gilbit.barota.data.model.DestinationStopStatus
 import com.gilbit.barota.BuildConfig
 import com.gilbit.barota.ui.selection.LineBadges
+import com.gilbit.barota.domain.RouteDirectionResult
+import com.gilbit.barota.domain.effectiveArrivalSeconds
 
 @Composable
 fun ArrivalRoute(
@@ -65,8 +67,8 @@ fun ArrivalRoute(
     viewModel: ArrivalViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    LaunchedEffect(originName, destinationName) {
-        viewModel.load(originName, destinationName)
+    LaunchedEffect(originName, destinationName, originLines, destinationLines) {
+        viewModel.load(originName, destinationName, originLines, destinationLines)
     }
 
     ArrivalScreen(
@@ -76,7 +78,8 @@ fun ArrivalRoute(
         destinationLines = destinationLines,
         uiState = uiState,
         onBack = onBack,
-        onRefresh = { viewModel.refresh(originName, destinationName) },
+        onRefresh = viewModel::refresh,
+        onSelectLine = viewModel::selectLine,
     )
 }
 
@@ -90,12 +93,13 @@ fun ArrivalScreen(
     uiState: ArrivalUiState,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
+    onSelectLine: (String) -> Unit = {},
 ) {
     var debugStopStatus by remember { mutableStateOf(DestinationStopStatus.UNKNOWN) }
     val previewStatus = debugStopStatus.takeUnless { it == DestinationStopStatus.UNKNOWN }
-    val nearestArrival = uiState.arrivals.minByOrNull { it.arrivalSeconds ?: Int.MAX_VALUE }
+    val firstArrival = uiState.arrivals.firstOrNull()
     val screenStopStatus = previewStatus
-        ?: nearestArrival?.destinationStopStatus
+        ?: firstArrival?.destinationStopStatus
         ?: DestinationStopStatus.UNKNOWN
     val warningPulse = rememberInfiniteTransition(label = "미정차 경고 점멸")
     val flashingRed by warningPulse.animateColor(
@@ -157,6 +161,39 @@ fun ArrivalScreen(
                 )
             }
 
+            item {
+                when (val direction = uiState.routeDirection) {
+                    is RouteDirectionResult.Resolved -> Text(
+                        "${direction.route.line} · ${direction.route.direction.label} 열차만 표시합니다.",
+                        modifier = Modifier.testTag("route-direction"),
+                    )
+                    is RouteDirectionResult.LineSelectionRequired -> Text("조회할 공통 노선을 선택해 주세요.")
+                    is RouteDirectionResult.Unsupported -> Text(direction.message)
+                    is RouteDirectionResult.Unknown -> Text(direction.message)
+                    null -> Unit
+                }
+            }
+
+            if (uiState.commonLines.size > 1) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        uiState.commonLines.forEach { line ->
+                            OutlinedButton(
+                                onClick = { onSelectLine(line) },
+                                enabled = line != uiState.selectedLine,
+                                modifier = Modifier.testTag("route-line-$line"),
+                            ) { Text(line) }
+                        }
+                    }
+                }
+            }
+
+            if (uiState.arrivals.any { it.effectiveArrivalSeconds() == null }) {
+                item {
+                    Text("도착시간 미확인 열차는 뒤에 표시합니다. 미확인 열차 간 실제 진입 순서는 보장하지 않습니다.")
+                }
+            }
+
             if (BuildConfig.DEBUG) {
                 item {
                     StopDecisionTestControls(
@@ -182,6 +219,7 @@ fun ArrivalScreen(
             }
 
             when {
+                uiState.routeDirection != null && uiState.routeDirection !is RouteDirectionResult.Resolved -> Unit
                 uiState.isLoading && uiState.arrivals.isEmpty() -> item {
                     Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
@@ -193,7 +231,9 @@ fun ArrivalScreen(
                 }
 
                 uiState.arrivals.isEmpty() -> item {
-                    MessageCard("현재 $originName 도착정보가 없습니다.", onRefresh)
+                    val route = uiState.routeDirection?.route
+                    val target = route?.let { "${it.line} ${it.direction.label}" } ?: originName
+                    MessageCard("현재 $target 도착정보가 없습니다.", onRefresh)
                 }
 
                 else -> {
@@ -335,6 +375,9 @@ private fun ArrivalCard(
         colors = CardDefaults.cardColors(containerColor = containerColor, contentColor = contentColor),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (arrival.effectiveArrivalSeconds() == null) {
+                Text("도착시간 확인 중", style = MaterialTheme.typography.bodySmall)
+            }
             if (stopStatus != DestinationStopStatus.UNKNOWN) {
                 Text(
                     if (stopStatus == DestinationStopStatus.STOPS) {

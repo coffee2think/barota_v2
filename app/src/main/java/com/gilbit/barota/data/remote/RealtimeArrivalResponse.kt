@@ -20,6 +20,7 @@ data class ApiResult(
 @Serializable
 data class RealtimeArrivalDto(
     val rowNum: Int? = null,
+    val ordkey: String = "",
     val subwayId: String = "",
     val updnLine: String = "",
     val trainLineNm: String = "",

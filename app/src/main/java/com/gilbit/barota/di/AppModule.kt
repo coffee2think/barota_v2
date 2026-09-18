@@ -68,6 +68,10 @@ abstract class AppModule {
             retrofit.create(TimetableApi::class.java)
 
         @Provides
+        @Named("subwayApiKey")
+        fun provideSubwayApiKey(): String = BuildConfig.SEOUL_SUBWAY_API_KEY
+
+        @Provides
         @Named("timetableApiKey")
         fun provideTimetableApiKey(): String = BuildConfig.SEOUL_TIMETABLE_API_KEY
     }
