@@ -39,9 +39,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -52,7 +49,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gilbit.barota.data.model.TrainArrival
 import com.gilbit.barota.data.model.DestinationStopStatus
-import com.gilbit.barota.BuildConfig
 import com.gilbit.barota.ui.selection.LineBadges
 import com.gilbit.barota.domain.RouteDirectionResult
 import com.gilbit.barota.domain.effectiveArrivalSeconds
@@ -95,12 +91,8 @@ fun ArrivalScreen(
     onRefresh: () -> Unit,
     onSelectLine: (String) -> Unit = {},
 ) {
-    var debugStopStatus by remember { mutableStateOf(DestinationStopStatus.UNKNOWN) }
-    val previewStatus = debugStopStatus.takeUnless { it == DestinationStopStatus.UNKNOWN }
     val firstArrival = uiState.arrivals.firstOrNull()
-    val screenStopStatus = previewStatus
-        ?: firstArrival?.destinationStopStatus
-        ?: DestinationStopStatus.UNKNOWN
+    val screenStopStatus = firstArrival?.destinationStopStatus ?: DestinationStopStatus.UNKNOWN
     val warningPulse = rememberInfiniteTransition(label = "미정차 경고 점멸")
     val flashingRed by warningPulse.animateColor(
         initialValue = Color(0xFFFFDAD6),
@@ -194,30 +186,6 @@ fun ArrivalScreen(
                 }
             }
 
-            if (BuildConfig.DEBUG) {
-                item {
-                    StopDecisionTestControls(
-                        selectedStatus = debugStopStatus,
-                        onStatusSelected = { debugStopStatus = it },
-                    )
-                }
-                item {
-                    Text(
-                        "테스트용 열차 카드",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
-                item {
-                    ArrivalCard(
-                        arrival = debugTrainArrival,
-                        previewStatus = previewStatus,
-                        flashingRed = flashingRed,
-                    )
-                }
-            }
-
             when {
                 uiState.routeDirection != null && uiState.routeDirection !is RouteDirectionResult.Resolved -> Unit
                 uiState.isLoading && uiState.arrivals.isEmpty() -> item {
@@ -248,7 +216,6 @@ fun ArrivalScreen(
                     items(uiState.arrivals, key = TrainArrival::id) { arrival ->
                         ArrivalCard(
                             arrival = arrival,
-                            previewStatus = previewStatus,
                             flashingRed = flashingRed,
                         )
                     }
@@ -257,56 +224,6 @@ fun ArrivalScreen(
                     }
                 }
             }
-        }
-    }
-}
-
-private val debugTrainArrival = TrainArrival(
-    id = "debug-arrival",
-    trainNumber = "TEST-200",
-    line = "2호선",
-    direction = "내선",
-    terminalStation = "성수",
-    arrivalMessage = "3분 20초 후",
-    currentLocation = "역삼 출발",
-    arrivalSeconds = 200,
-    trainType = "일반",
-    isLastTrain = false,
-    receivedAt = "테스트 데이터",
-)
-
-@Composable
-private fun StopDecisionTestControls(
-    selectedStatus: DestinationStopStatus,
-    onStatusSelected: (DestinationStopStatus) -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-        shape = RoundedCornerShape(20.dp),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("정차 여부 UX 테스트", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "실제 운행 열차가 없어도 열차 카드의 상태를 바꿔볼 수 있어요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-            OutlinedButton(
-                onClick = { onStatusSelected(DestinationStopStatus.STOPS) },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = selectedStatus != DestinationStopStatus.STOPS,
-            ) { Text("정차 · 초록 카드 테스트") }
-            OutlinedButton(
-                onClick = { onStatusSelected(DestinationStopStatus.DOES_NOT_STOP) },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = selectedStatus != DestinationStopStatus.DOES_NOT_STOP,
-            ) { Text("미정차 · 빨강 점멸 테스트") }
-            OutlinedButton(
-                onClick = { onStatusSelected(DestinationStopStatus.UNKNOWN) },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = selectedStatus != DestinationStopStatus.UNKNOWN,
-            ) { Text("판정 표시 해제") }
         }
     }
 }
@@ -349,10 +266,9 @@ private fun RouteHeader(
 @Composable
 private fun ArrivalCard(
     arrival: TrainArrival,
-    previewStatus: DestinationStopStatus? = null,
     flashingRed: Color,
 ) {
-    val stopStatus = previewStatus ?: arrival.destinationStopStatus
+    val stopStatus = arrival.destinationStopStatus
     val containerColor = when (stopStatus) {
         DestinationStopStatus.STOPS -> Color(0xFFDDF6E8)
         DestinationStopStatus.DOES_NOT_STOP -> flashingRed

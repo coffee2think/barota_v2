@@ -4,10 +4,12 @@ import com.gilbit.barota.BuildConfig
 import com.gilbit.barota.data.remote.SeoulSubwayApi
 import com.gilbit.barota.data.remote.TimetableApi
 import com.gilbit.barota.data.repository.AssetStationRepository
+import com.gilbit.barota.data.repository.AssetRouteNetworkRepository
 import com.gilbit.barota.data.repository.ArrivalRepository
 import com.gilbit.barota.data.repository.SeoulArrivalRepository
 import com.gilbit.barota.data.repository.SeoulTrainStopRepository
 import com.gilbit.barota.data.repository.StationRepository
+import com.gilbit.barota.data.repository.RouteNetworkRepository
 import com.gilbit.barota.data.repository.TrainStopRepository
 import dagger.Binds
 import dagger.Module
@@ -24,6 +26,12 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class AppModule {
+    @Binds
+    @Singleton
+    abstract fun bindRouteNetworkRepository(
+        repository: AssetRouteNetworkRepository,
+    ): RouteNetworkRepository
+
     @Binds
     @Singleton
     abstract fun bindStationRepository(

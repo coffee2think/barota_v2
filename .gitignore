@@ -1,6 +1,7 @@
 # Gradle / Kotlin caches and generated build output
 .gradle/
 .gradle-user/
+.android-user/
 .kotlin/
 build/
 out/

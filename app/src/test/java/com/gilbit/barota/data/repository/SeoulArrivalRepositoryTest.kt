@@ -1,12 +1,15 @@
 package com.gilbit.barota.data.repository
 
+import com.gilbit.barota.data.model.DestinationStopDecision
+import com.gilbit.barota.data.model.DestinationStopDiagnostic
+import com.gilbit.barota.data.model.DestinationStopReason
 import com.gilbit.barota.data.model.DestinationStopStatus
 import com.gilbit.barota.data.model.TrainArrival
 import com.gilbit.barota.data.remote.ApiResult
 import com.gilbit.barota.data.remote.RealtimeArrivalDto
 import com.gilbit.barota.data.remote.RealtimeArrivalResponse
 import com.gilbit.barota.data.remote.SeoulSubwayApi
-import com.gilbit.barota.domain.RouteDirectionResolver
+import com.gilbit.barota.testing.RouteNetworkTestData
 import com.gilbit.barota.domain.RouteDirectionResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
@@ -146,9 +149,30 @@ class SeoulArrivalRepositoryTest {
     }
 
     @Test
+    fun routeMetadataDrivesLineNameAndParentheticalApiStationMatching() = runTest {
+        val resolved = RouteNetworkTestData.resolver().resolve(
+            "자양",
+            "청담",
+            listOf("7호선"),
+            listOf("7호선"),
+        ) as RouteDirectionResult.Resolved
+        val api = FakeSubwayApi(
+            listOf(dto("line-seven", "하행", "자양(뚝섬한강공원)", "1007")),
+        )
+
+        val arrival = SeoulArrivalRepository(api, RecordingTrainStopRepository(), "test-key")
+            .getArrivals(resolved.route)
+            .single()
+
+        assertEquals("7호선", arrival.line)
+        assertEquals("7호선", arrival.timetableLineName)
+        assertEquals(listOf("자양(뚝섬한강공원)"), api.requestedStations)
+    }
+
+    @Test
     fun cancellationIsNotConvertedToUnknownStopStatus() = runTest {
         val stops = object : TrainStopRepository {
-            override suspend fun getDestinationStopStatus(arrival: TrainArrival, originName: String, destinationName: String): DestinationStopStatus {
+            override suspend fun getDestinationStopDecision(arrival: TrainArrival, originName: String, destinationName: String): DestinationStopDecision {
                 throw CancellationException("cancelled")
             }
         }
@@ -161,16 +185,17 @@ class SeoulArrivalRepositoryTest {
     @Test
     fun failedIndividualTimetableRetainsTrainAsUnknown() = runTest {
         val stops = object : TrainStopRepository {
-            override suspend fun getDestinationStopStatus(arrival: TrainArrival, originName: String, destinationName: String): DestinationStopStatus {
+            override suspend fun getDestinationStopDecision(arrival: TrainArrival, originName: String, destinationName: String): DestinationStopDecision {
                 throw java.io.IOException("timetable unavailable")
             }
         }
         val arrivals = SeoulArrivalRepository(FakeSubwayApi(listOf(dto("up", "상행"))), stops, "test-key").getArrivals(route())
         assertEquals(DestinationStopStatus.UNKNOWN, arrivals.single().destinationStopStatus)
+        assertEquals(DestinationStopReason.LOOKUP_FAILED, arrivals.single().destinationStopDiagnostic.reason)
     }
 
     private fun route(origin: String = "독산", destination: String = "종로3가") =
-        (RouteDirectionResolver().resolve(origin, destination, listOf("1호선"), listOf("1호선")) as RouteDirectionResult.Resolved).route
+        (RouteNetworkTestData.resolver().resolve(origin, destination, listOf("1호선"), listOf("1호선")) as RouteDirectionResult.Resolved).route
 
     private fun dto(number: String, direction: String, station: String = "독산", line: String = "1001", terminal: String = "청량리") =
         RealtimeArrivalDto(
@@ -193,8 +218,22 @@ private class FakeSubwayApi(
 
 private class RecordingTrainStopRepository : TrainStopRepository {
     val calls = mutableListOf<Triple<String, String, String>>()
-    override suspend fun getDestinationStopStatus(arrival: TrainArrival, originName: String, destinationName: String): DestinationStopStatus {
+    override suspend fun getDestinationStopDecision(arrival: TrainArrival, originName: String, destinationName: String): DestinationStopDecision {
         calls += Triple(arrival.trainNumber, originName, destinationName)
-        return if (arrival.terminalStation == "구로") DestinationStopStatus.DOES_NOT_STOP else DestinationStopStatus.STOPS
+        val status = if (arrival.terminalStation == "구로") {
+            DestinationStopStatus.DOES_NOT_STOP
+        } else {
+            DestinationStopStatus.STOPS
+        }
+        return DestinationStopDecision(
+            status = status,
+            diagnostic = DestinationStopDiagnostic(
+                reason = if (status == DestinationStopStatus.STOPS) {
+                    DestinationStopReason.FUTURE_DESTINATION_FOUND
+                } else {
+                    DestinationStopReason.DESTINATION_TRAIN_NOT_FOUND
+                },
+            ),
+        )
     }
 }

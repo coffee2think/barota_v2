@@ -13,6 +13,7 @@ data class TrainArrival(
     val isLastTrain: Boolean,
     val receivedAt: String,
     val destinationStopStatus: DestinationStopStatus = DestinationStopStatus.UNKNOWN,
+    val destinationStopDiagnostic: DestinationStopDiagnostic = DestinationStopDiagnostic(),
     val arrivalState: ArrivalState = ArrivalState.UNKNOWN,
     val arrivalOrderKey: String = "",
     val arrivalTimeKind: ArrivalTimeKind = when {
@@ -22,6 +23,7 @@ data class TrainArrival(
         arrivalState == ArrivalState.ENTERING || arrivalState == ArrivalState.ARRIVED -> ArrivalTimeKind.CONFIRMED_NOW
         else -> ArrivalTimeKind.ZERO_UNCONFIRMED
     },
+    val timetableLineName: String? = null,
 )
 
 enum class ArrivalState {
@@ -49,4 +51,33 @@ enum class DestinationStopStatus {
     UNKNOWN,
     STOPS,
     DOES_NOT_STOP,
+}
+
+data class DestinationStopDecision(
+    val status: DestinationStopStatus,
+    val diagnostic: DestinationStopDiagnostic,
+)
+
+data class DestinationStopDiagnostic(
+    val reason: DestinationStopReason = DestinationStopReason.NOT_EVALUATED,
+    val originScheduleMatchCount: Int? = null,
+    val destinationScheduleMatchCount: Int? = null,
+    val attemptedTimetableTrainNumbers: List<String> = emptyList(),
+    val resolvedTimetableTrainNumber: String? = null,
+)
+
+enum class DestinationStopReason {
+    NOT_EVALUATED,
+    TERMINAL_MATCH,
+    MISSING_API_KEY,
+    MISSING_TRAIN_NUMBER,
+    INVALID_REALTIME_TRAIN_NUMBER,
+    UNSUPPORTED_LINE,
+    ORIGIN_TRAIN_NOT_FOUND,
+    TIMETABLE_TRAIN_NUMBER_NOT_FOUND,
+    DESTINATION_TRAIN_NOT_FOUND,
+    FUTURE_DESTINATION_FOUND,
+    DESTINATION_ALREADY_PASSED,
+    SCHEDULE_TIME_UNAVAILABLE,
+    LOOKUP_FAILED,
 }

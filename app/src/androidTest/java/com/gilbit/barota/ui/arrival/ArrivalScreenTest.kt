@@ -1,12 +1,20 @@
 package com.gilbit.barota.ui.arrival
 
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.gilbit.barota.data.model.DestinationStopStatus
+import com.gilbit.barota.data.model.DestinationStopDiagnostic
+import com.gilbit.barota.data.model.DestinationStopReason
 import com.gilbit.barota.data.model.TrainArrival
+import com.gilbit.barota.data.model.RouteLine
+import com.gilbit.barota.data.model.RouteNetwork
+import com.gilbit.barota.data.model.RouteService
+import com.gilbit.barota.data.model.ServiceDirections
 import com.gilbit.barota.ui.theme.SubwayBarotaTheme
 import com.gilbit.barota.domain.RouteDirectionResolver
 import com.gilbit.barota.domain.RouteDirectionResult
@@ -17,38 +25,6 @@ import org.junit.Test
 class ArrivalScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
-
-    @Test
-    fun stopAndNonStopButtonsChangeArrivalCardInPlace() {
-        composeRule.setContent {
-            SubwayBarotaTheme(dynamicColor = false) {
-                ArrivalScreen(
-                    originName = "강남",
-                    originLines = listOf("2호선"),
-                    destinationName = "서울역",
-                    destinationLines = listOf("1호선", "4호선"),
-                    uiState = ArrivalUiState(arrivals = emptyList()),
-                    onBack = {},
-                    onRefresh = {},
-                )
-            }
-        }
-
-        composeRule.onNodeWithText("정차 · 초록 카드 테스트").performScrollTo().performClick()
-        composeRule.onNodeWithText("테스트용 열차 카드").assertExists()
-        composeRule.onNodeWithTag("arrival-screen-green").assertExists()
-        composeRule.onNodeWithTag("arrival-card-green").assertExists()
-        composeRule.onNodeWithText("😊 목적지 정차 · 타도 돼요").assertExists()
-
-        composeRule.onNodeWithText("미정차 · 빨강 점멸 테스트").performScrollTo().performClick()
-        composeRule.onNodeWithTag("arrival-screen-red-flashing").assertExists()
-        composeRule.onNodeWithTag("arrival-card-red-flashing").assertExists()
-        composeRule.onNodeWithText("😠 목적지 미정차 · 타면 안 돼요").assertExists()
-
-        composeRule.onNodeWithText("판정 표시 해제").performScrollTo().performClick()
-        composeRule.onNodeWithTag("arrival-screen-default").assertExists()
-        composeRule.onNodeWithTag("arrival-card-unknown").assertExists()
-    }
 
     @Test
     fun screenUsesDestinationStatusOfFirstFinalListItemWithoutReordering() {
@@ -72,11 +48,66 @@ class ArrivalScreenTest {
         }
 
         composeRule.onNodeWithTag("arrival-screen-green").assertExists()
+        composeRule.onAllNodesWithTag("arrival-card-green").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("arrival-card-red-flashing").assertCountEquals(1)
+    }
+
+    @Test
+    fun trainCardDoesNotExposeInternalDiagnosticText() {
+        composeRule.setContent {
+            SubwayBarotaTheme(dynamicColor = false) {
+                ArrivalScreen(
+                    originName = "독산",
+                    originLines = listOf("1호선"),
+                    destinationName = "종로3가",
+                    destinationLines = listOf("1호선"),
+                    uiState = ArrivalUiState(
+                        arrivals = listOf(
+                            arrival("unknown", 120, DestinationStopStatus.UNKNOWN).copy(
+                                line = "1호선",
+                                direction = "상행",
+                                terminalStation = "광운대",
+                                destinationStopDiagnostic = DestinationStopDiagnostic(
+                                    reason = DestinationStopReason.TIMETABLE_TRAIN_NUMBER_NOT_FOUND,
+                                    originScheduleMatchCount = 0,
+                                    attemptedTimetableTrainNumbers = listOf("K472", "S472"),
+                                ),
+                            ),
+                        ),
+                    ),
+                    onBack = {},
+                    onRefresh = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("노선 진단", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("실제 판정", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("시간표 매칭", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("시간표 열차번호", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("도착 데이터", substring = true).assertDoesNotExist()
     }
 
     @Test
     fun doksanRouteShowsUpDirectionAndDirectionSpecificEmptyResult() {
-        val resolution = RouteDirectionResolver().resolve(
+        val resolution = RouteDirectionResolver(
+            RouteNetwork(
+                version = 1,
+                lines = listOf(
+                    RouteLine(
+                        line = "1호선",
+                        subwayId = "1001",
+                        services = listOf(
+                            RouteService(
+                                id = "main",
+                                directions = ServiceDirections("하행", "상행"),
+                                edges = listOf(listOf("종로3가", "독산")),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ).resolve(
             "독산", "종로3가", listOf("1호선"), listOf("1호선", "3호선", "5호선"),
         )
         composeRule.setContent {

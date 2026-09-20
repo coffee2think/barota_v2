@@ -1,5 +1,8 @@
 package com.gilbit.barota.data.repository
 
+import com.gilbit.barota.data.model.DestinationStopDecision
+import com.gilbit.barota.data.model.DestinationStopDiagnostic
+import com.gilbit.barota.data.model.DestinationStopReason
 import com.gilbit.barota.data.model.DestinationStopStatus
 import com.gilbit.barota.data.model.TrainArrival
 import com.gilbit.barota.data.remote.TimetableApi
@@ -15,27 +18,84 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @Singleton
-class SeoulTrainStopRepository @Inject constructor(
+class SeoulTrainStopRepository private constructor(
     private val api: TimetableApi,
-    @Named("timetableApiKey") private val apiKey: String,
+    private val apiKey: String,
+    private val nowProvider: () -> LocalDateTime,
 ) : TrainStopRepository {
-    override suspend fun getDestinationStopStatus(
+    @Inject
+    constructor(
+        api: TimetableApi,
+        @Named("timetableApiKey") apiKey: String,
+    ) : this(api, apiKey, { LocalDateTime.now(SEOUL_ZONE) })
+
+    internal constructor(
+        api: TimetableApi,
+        apiKey: String,
+        now: LocalDateTime,
+    ) : this(api, apiKey, { now })
+
+    override suspend fun getDestinationStopDecision(
         arrival: TrainArrival,
         originName: String,
         destinationName: String,
-    ): DestinationStopStatus {
-        if (arrival.terminalStation.sameStation(destinationName)) return DestinationStopStatus.STOPS
-        if (apiKey.isBlank() || arrival.trainNumber.isBlank() || arrival.line !in supportedLines) {
-            return DestinationStopStatus.UNKNOWN
+    ): DestinationStopDecision {
+        if (arrival.terminalStation.sameStation(destinationName)) {
+            return decision(DestinationStopStatus.STOPS, DestinationStopReason.TERMINAL_MATCH)
+        }
+        if (apiKey.isBlank()) {
+            return decision(DestinationStopStatus.UNKNOWN, DestinationStopReason.MISSING_API_KEY)
+        }
+        if (arrival.trainNumber.isBlank()) {
+            return decision(DestinationStopStatus.UNKNOWN, DestinationStopReason.MISSING_TRAIN_NUMBER)
+        }
+        val normalizedTrainNumber = arrival.trainNumber.normalizeRealtimeTrainNumber()
+            ?: return decision(
+                DestinationStopStatus.UNKNOWN,
+                DestinationStopReason.INVALID_REALTIME_TRAIN_NUMBER,
+            )
+        if (arrival.timetableLineName == null) {
+            return decision(DestinationStopStatus.UNKNOWN, DestinationStopReason.UNSUPPORTED_LINE)
         }
 
-        val destinationRows = getScheduleRows(arrival, destinationName)
-        val originRows = getScheduleRows(arrival, originName)
-        val originSchedules = originRows.findTrainAt(arrival.trainNumber, originName)
-        if (originSchedules.isEmpty()) return DestinationStopStatus.UNKNOWN
+        val attemptedTrainNumbers = mutableListOf<String>()
+        var resolvedTrainNumber: String? = null
+        var originSchedules: List<TrainScheduleItem> = emptyList()
+        for (candidate in listOf("K$normalizedTrainNumber", "S$normalizedTrainNumber")) {
+            attemptedTrainNumbers += candidate
+            val rows = getScheduleRows(arrival, originName, candidate)
+            val matches = rows.findTrainAt(candidate, originName)
+            if (matches.isNotEmpty()) {
+                resolvedTrainNumber = candidate
+                originSchedules = matches
+                break
+            }
+        }
+        if (resolvedTrainNumber == null) {
+            return DestinationStopDecision(
+                status = DestinationStopStatus.UNKNOWN,
+                diagnostic = DestinationStopDiagnostic(
+                    reason = DestinationStopReason.TIMETABLE_TRAIN_NUMBER_NOT_FOUND,
+                    originScheduleMatchCount = 0,
+                    attemptedTimetableTrainNumbers = attemptedTrainNumbers,
+                ),
+            )
+        }
 
-        val destinationSchedules = destinationRows.findTrainAt(arrival.trainNumber, destinationName)
-        if (destinationSchedules.isEmpty()) return DestinationStopStatus.DOES_NOT_STOP
+        val destinationRows = getScheduleRows(arrival, destinationName, resolvedTrainNumber)
+        val destinationSchedules = destinationRows.findTrainAt(resolvedTrainNumber, destinationName)
+        val diagnosticCounts = DestinationStopDiagnostic(
+            originScheduleMatchCount = originSchedules.size,
+            destinationScheduleMatchCount = destinationSchedules.size,
+            attemptedTimetableTrainNumbers = attemptedTrainNumbers,
+            resolvedTimetableTrainNumber = resolvedTrainNumber,
+        )
+        if (destinationSchedules.isEmpty()) {
+            return DestinationStopDecision(
+                status = DestinationStopStatus.DOES_NOT_STOP,
+                diagnostic = diagnosticCounts.copy(reason = DestinationStopReason.DESTINATION_TRAIN_NOT_FOUND),
+            )
+        }
 
         // 같은 열차가 목적지역에 있었더라도 이미 출발역을 지나온 경로라면 승차 후에는 도달하지 않는다.
         val hasFutureStop = originSchedules.any { origin ->
@@ -48,14 +108,27 @@ class SeoulTrainStopRepository @Inject constructor(
         val hasComparableTimes = originSchedules.any { it.departureTimeSeconds() != null } &&
             destinationSchedules.any { it.arrivalTimeSeconds() != null }
         return when {
-            hasFutureStop -> DestinationStopStatus.STOPS
-            hasComparableTimes -> DestinationStopStatus.DOES_NOT_STOP
-            else -> DestinationStopStatus.UNKNOWN
+            hasFutureStop -> DestinationStopDecision(
+                DestinationStopStatus.STOPS,
+                diagnosticCounts.copy(reason = DestinationStopReason.FUTURE_DESTINATION_FOUND),
+            )
+            hasComparableTimes -> DestinationStopDecision(
+                DestinationStopStatus.DOES_NOT_STOP,
+                diagnosticCounts.copy(reason = DestinationStopReason.DESTINATION_ALREADY_PASSED),
+            )
+            else -> DestinationStopDecision(
+                DestinationStopStatus.UNKNOWN,
+                diagnosticCounts.copy(reason = DestinationStopReason.SCHEDULE_TIME_UNAVAILABLE),
+            )
         }
     }
 
-    private suspend fun getScheduleRows(arrival: TrainArrival, stationName: String): List<TrainScheduleItem> {
-        val response = api.getTrainSchedule(buildUrl(arrival, stationName)).response
+    private suspend fun getScheduleRows(
+        arrival: TrainArrival,
+        stationName: String,
+        timetableTrainNumber: String,
+    ): List<TrainScheduleItem> {
+        val response = api.getTrainSchedule(buildUrl(arrival, stationName, timetableTrainNumber)).response
             ?: throw SeoulApiException("열차시간표 API 응답 형식을 확인할 수 없습니다.")
         if (response.header.resultCode != "00") {
             throw SeoulApiException(
@@ -65,27 +138,39 @@ class SeoulTrainStopRepository @Inject constructor(
         return response.body.items.item
     }
 
-    private fun buildUrl(arrival: TrainArrival, stationName: String): HttpUrl {
-        val now = LocalDateTime.now(SEOUL_ZONE)
+    private fun buildUrl(
+        arrival: TrainArrival,
+        stationName: String,
+        timetableTrainNumber: String,
+    ): HttpUrl {
+        val now = nowProvider()
         val dayType = when (now.dayOfWeek) {
             DayOfWeek.SATURDAY, DayOfWeek.SUNDAY -> "주말"
             else -> "평일"
         }
+        val pathSegments = listOf(
+            apiKey,
+            "json",
+            "getTrainSch",
+            "1",
+            "1000",
+            "",
+            "N",
+            arrival.direction,
+            dayType,
+            checkNotNull(arrival.timetableLineName),
+            timetableTrainNumber,
+            stationName.removeSuffix("역"),
+            "", // stnCd: 시간표용 역 코드 데이터가 확보되기 전까지 역명으로 조회한다.
+            "",
+            "",
+            "",
+            "",
+            "",
+            now.format(SEARCH_DATE_TIME_FORMAT),
+        )
         return BASE_URL.newBuilder()
-            .addPathSegment(apiKey)
-            .addPathSegment("json")
-            .addPathSegment("getTrainSch")
-            .addPathSegment("1")
-            .addPathSegment("100")
-            .addPathSegment("trainno,stnNm,lineNm,upbdnbSe")
-            .addPathSegment("N")
-            .addPathSegment(arrival.direction)
-            .addPathSegment(dayType)
-            .addPathSegment(arrival.line)
-            .addPathSegment(arrival.trainNumber)
-            .addPathSegment(stationName.removeSuffix("역"))
-            .apply { repeat(6) { addPathSegment(" ") } }
-            .addPathSegment(now.format(SEARCH_DATE_TIME_FORMAT))
+            .addPathSegments(pathSegments.joinToString("/"))
             .build()
     }
 
@@ -93,15 +178,28 @@ class SeoulTrainStopRepository @Inject constructor(
         val BASE_URL = "http://openapi.seoul.go.kr:8088/".toHttpUrl()
         val SEOUL_ZONE: ZoneId = ZoneId.of("Asia/Seoul")
         val SEARCH_DATE_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-        val supportedLines = (1..9).map { "${it}호선" }.toSet()
     }
 }
+
+private fun decision(
+    status: DestinationStopStatus,
+    reason: DestinationStopReason,
+): DestinationStopDecision = DestinationStopDecision(
+    status = status,
+    diagnostic = DestinationStopDiagnostic(reason = reason),
+)
 
 private fun List<TrainScheduleItem>.findTrainAt(
     trainNumber: String,
     stationName: String,
 ): List<TrainScheduleItem> = filter {
     it.trainno == trainNumber && it.stnNm.sameStation(stationName)
+}
+
+private fun String.normalizeRealtimeTrainNumber(): String? {
+    val value = trim()
+    if (value.isEmpty() || value.any { !it.isDigit() }) return null
+    return value.trimStart('0').ifEmpty { "0" }
 }
 
 private fun TrainScheduleItem.departureTimeSeconds(): Int? =

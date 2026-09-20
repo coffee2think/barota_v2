@@ -4,7 +4,7 @@ import com.gilbit.barota.data.model.TrainArrival
 import com.gilbit.barota.data.repository.ArrivalRepository
 import com.gilbit.barota.data.repository.ArrivalDirectionUnknownException
 import com.gilbit.barota.domain.DirectionalRoute
-import com.gilbit.barota.domain.RouteDirectionResolver
+import com.gilbit.barota.testing.RouteNetworkTestData
 import com.gilbit.barota.domain.RouteDirectionResult
 import com.gilbit.barota.domain.TravelDirection
 import com.gilbit.barota.ui.selection.MainDispatcherRule
@@ -31,7 +31,7 @@ class ArrivalViewModelTest {
     @Test
     fun loadShowsArrivalsAndReceivedTime() = runTest {
         val arrival = arrival()
-        val viewModel = ArrivalViewModel(FakeArrivalRepository(result = listOf(arrival)), RouteDirectionResolver())
+        val viewModel = ArrivalViewModel(FakeArrivalRepository(result = listOf(arrival)), RouteNetworkTestData.resolver())
 
         viewModel.load("독산", "종로3가", listOf("1호선"), listOf("1호선", "3호선", "5호선"))
         advanceUntilIdle()
@@ -45,7 +45,7 @@ class ArrivalViewModelTest {
 
     @Test
     fun failureShowsRetryableError() = runTest {
-        val viewModel = ArrivalViewModel(FakeArrivalRepository(error = java.io.IOException()), RouteDirectionResolver())
+        val viewModel = ArrivalViewModel(FakeArrivalRepository(error = java.io.IOException()), RouteNetworkTestData.resolver())
 
         viewModel.load("독산", "종로3가", listOf("1호선"), listOf("1호선"))
         advanceUntilIdle()
@@ -57,7 +57,7 @@ class ArrivalViewModelTest {
     @Test
     fun repeatedLoadDoesNotCallRepositoryAgainUnlessForced() = runTest {
         val repository = FakeArrivalRepository(result = listOf(arrival()))
-        val viewModel = ArrivalViewModel(repository, RouteDirectionResolver())
+        val viewModel = ArrivalViewModel(repository, RouteNetworkTestData.resolver())
 
         viewModel.load("독산", "종로3가", listOf("1호선"), listOf("1호선"))
         advanceUntilIdle()
@@ -71,9 +71,9 @@ class ArrivalViewModelTest {
     }
 
     @Test
-    fun unsupportedAndSelectionRequiredStatesDoNotCallRepository() = runTest {
+    fun unsupportedAndSelectionRequiredStatesDoNotCallRepositoryUntilLineIsResolved() = runTest {
         val repository = FakeArrivalRepository(result = listOf(arrival()))
-        val viewModel = ArrivalViewModel(repository, RouteDirectionResolver())
+        val viewModel = ArrivalViewModel(repository, RouteNetworkTestData.resolver())
         viewModel.load("독산", "강남", listOf("1호선"), listOf("2호선"))
         advanceUntilIdle()
         assertTrue(viewModel.uiState.value.routeDirection is RouteDirectionResult.Unsupported)
@@ -93,19 +93,19 @@ class ArrivalViewModelTest {
         assertEquals("1호선", viewModel.uiState.value.selectedLine)
         viewModel.selectLine("2호선")
         advanceUntilIdle()
-        assertTrue(viewModel.uiState.value.routeDirection is RouteDirectionResult.Unsupported)
-        assertTrue(viewModel.uiState.value.arrivals.isEmpty())
-        assertNull(viewModel.uiState.value.updatedAt)
-        assertEquals(2, repository.callCount)
+        val lineTwo = viewModel.uiState.value.routeDirection as RouteDirectionResult.Resolved
+        assertEquals(TravelDirection.OUTER, lineTwo.route.direction)
+        assertEquals(1, viewModel.uiState.value.arrivals.size)
+        assertEquals(3, repository.callCount)
         viewModel.selectLine("1호선")
         advanceUntilIdle()
-        assertEquals(3, repository.callCount)
+        assertEquals(4, repository.callCount)
     }
 
     @Test
     fun reversedRouteClearsOldArrivalsAndPassesDownDirection() = runTest {
         val repository = FakeArrivalRepository(result = listOf(arrival()))
-        val viewModel = ArrivalViewModel(repository, RouteDirectionResolver())
+        val viewModel = ArrivalViewModel(repository, RouteNetworkTestData.resolver())
         viewModel.load("독산", "종로3가", listOf("1호선"), listOf("1호선"))
         advanceUntilIdle()
         viewModel.load("종로3가", "독산", listOf("1호선"), listOf("1호선"))
@@ -129,7 +129,7 @@ class ArrivalViewModelTest {
                 }
                 else listOf(arrival().copy(id = "new-down", direction = "하행"))
         }
-        val viewModel = ArrivalViewModel(repository, RouteDirectionResolver())
+        val viewModel = ArrivalViewModel(repository, RouteNetworkTestData.resolver())
         viewModel.load("독산", "종로3가", listOf("1호선"), listOf("1호선"))
         runCurrent()
         viewModel.load("종로3가", "독산", listOf("1호선"), listOf("1호선"))
@@ -154,7 +154,7 @@ class ArrivalViewModelTest {
                 }
             }
         }
-        val viewModel = ArrivalViewModel(repository, RouteDirectionResolver())
+        val viewModel = ArrivalViewModel(repository, RouteNetworkTestData.resolver())
         viewModel.load("독산", "종로3가", listOf("1호선"), listOf("1호선"))
         runCurrent()
         viewModel.refresh()
@@ -167,7 +167,7 @@ class ArrivalViewModelTest {
 
     @Test
     fun noTrainsIsResolvedStateNotUnsupportedState() = runTest {
-        val viewModel = ArrivalViewModel(FakeArrivalRepository(), RouteDirectionResolver())
+        val viewModel = ArrivalViewModel(FakeArrivalRepository(), RouteNetworkTestData.resolver())
         viewModel.load("독산", "종로3가", listOf("1호선"), listOf("1호선"))
         advanceUntilIdle()
         assertTrue(viewModel.uiState.value.routeDirection is RouteDirectionResult.Resolved)
@@ -178,7 +178,7 @@ class ArrivalViewModelTest {
 
     @Test
     fun unknownArrivalDirectionHasSpecificErrorMessage() = runTest {
-        val viewModel = ArrivalViewModel(FakeArrivalRepository(error = ArrivalDirectionUnknownException()), RouteDirectionResolver())
+        val viewModel = ArrivalViewModel(FakeArrivalRepository(error = ArrivalDirectionUnknownException()), RouteNetworkTestData.resolver())
         viewModel.load("독산", "종로3가", listOf("1호선"), listOf("1호선"))
         advanceUntilIdle()
         assertEquals(ArrivalDirectionUnknownException().message, viewModel.uiState.value.errorMessage)
