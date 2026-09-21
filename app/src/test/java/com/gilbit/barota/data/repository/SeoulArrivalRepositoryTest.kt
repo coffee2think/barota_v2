@@ -172,7 +172,7 @@ class SeoulArrivalRepositoryTest {
     @Test
     fun cancellationIsNotConvertedToUnknownStopStatus() = runTest {
         val stops = object : TrainStopRepository {
-            override suspend fun getDestinationStopDecision(arrival: TrainArrival, originName: String, destinationName: String): DestinationStopDecision {
+            override suspend fun getDestinationStopDecisions(arrivals: List<TrainArrival>, originName: String, destinationName: String): Map<String, DestinationStopDecision> {
                 throw CancellationException("cancelled")
             }
         }
@@ -185,7 +185,7 @@ class SeoulArrivalRepositoryTest {
     @Test
     fun failedIndividualTimetableRetainsTrainAsUnknown() = runTest {
         val stops = object : TrainStopRepository {
-            override suspend fun getDestinationStopDecision(arrival: TrainArrival, originName: String, destinationName: String): DestinationStopDecision {
+            override suspend fun getDestinationStopDecisions(arrivals: List<TrainArrival>, originName: String, destinationName: String): Map<String, DestinationStopDecision> {
                 throw java.io.IOException("timetable unavailable")
             }
         }
@@ -218,20 +218,20 @@ private class FakeSubwayApi(
 
 private class RecordingTrainStopRepository : TrainStopRepository {
     val calls = mutableListOf<Triple<String, String, String>>()
-    override suspend fun getDestinationStopDecision(arrival: TrainArrival, originName: String, destinationName: String): DestinationStopDecision {
+    override suspend fun getDestinationStopDecisions(
+        arrivals: List<TrainArrival>,
+        originName: String,
+        destinationName: String,
+    ): Map<String, DestinationStopDecision> = arrivals.associate { arrival ->
         calls += Triple(arrival.trainNumber, originName, destinationName)
-        val status = if (arrival.terminalStation == "구로") {
-            DestinationStopStatus.DOES_NOT_STOP
-        } else {
-            DestinationStopStatus.STOPS
-        }
-        return DestinationStopDecision(
+        val status = if (arrival.terminalStation == "구로") DestinationStopStatus.DOES_NOT_STOP else DestinationStopStatus.STOPS
+        arrival.id to DestinationStopDecision(
             status = status,
             diagnostic = DestinationStopDiagnostic(
                 reason = if (status == DestinationStopStatus.STOPS) {
-                    DestinationStopReason.FUTURE_DESTINATION_FOUND
+                    DestinationStopReason.MAPPED_DESTINATION_FOUND
                 } else {
-                    DestinationStopReason.DESTINATION_TRAIN_NOT_FOUND
+                    DestinationStopReason.DESTINATION_CANDIDATE_NOT_FOUND
                 },
             ),
         )

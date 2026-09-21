@@ -68,7 +68,7 @@ class ArrivalScreenTest {
                                 direction = "상행",
                                 terminalStation = "광운대",
                                 destinationStopDiagnostic = DestinationStopDiagnostic(
-                                    reason = DestinationStopReason.TIMETABLE_TRAIN_NUMBER_NOT_FOUND,
+                                    reason = DestinationStopReason.ORIGIN_VALIDATION_FAILED,
                                     originScheduleMatchCount = 0,
                                     attemptedTimetableTrainNumbers = listOf("K472", "S472"),
                                 ),

@@ -15,6 +15,7 @@ import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
@@ -39,224 +40,357 @@ class SeoulTrainStopRepository private constructor(
         now: LocalDateTime,
     ) : this(api, apiKey, mappingStore, { now })
 
-    override suspend fun getDestinationStopDecision(
-        arrival: TrainArrival,
+    override suspend fun getDestinationStopDecisions(
+        arrivals: List<TrainArrival>,
         originName: String,
         destinationName: String,
-    ): DestinationStopDecision {
-        if (arrival.terminalStation.sameStation(destinationName)) {
-            return decision(DestinationStopStatus.STOPS, DestinationStopReason.TERMINAL_MATCH)
-        }
-        if (apiKey.isBlank()) {
-            return decision(DestinationStopStatus.UNKNOWN, DestinationStopReason.MISSING_API_KEY)
-        }
-        if (arrival.trainNumber.isBlank()) {
-            return decision(DestinationStopStatus.UNKNOWN, DestinationStopReason.MISSING_TRAIN_NUMBER)
-        }
-        val normalizedTrainNumber = arrival.trainNumber.normalizeRealtimeTrainNumber()
-            ?: return decision(
-                DestinationStopStatus.UNKNOWN,
-                DestinationStopReason.INVALID_REALTIME_TRAIN_NUMBER,
-            )
-        if (arrival.timetableLineName == null) {
-            return decision(DestinationStopStatus.UNKNOWN, DestinationStopReason.UNSUPPORTED_LINE)
-        }
+    ): Map<String, DestinationStopDecision> {
+        if (arrivals.isEmpty()) return emptyMap()
 
-        val resolution = resolveTimetableTrainNumber(
-            arrival = arrival,
-            originName = originName,
-            normalizedRealtimeTrainNumber = normalizedTrainNumber,
-        )
-        if (resolution == null) {
-            return DestinationStopDecision(
-                status = DestinationStopStatus.UNKNOWN,
-                diagnostic = DestinationStopDiagnostic(
-                    reason = DestinationStopReason.TIMETABLE_TRAIN_NUMBER_NOT_FOUND,
-                    originScheduleMatchCount = 0,
-                ),
-            )
-        }
-
-        val destinationRows = getScheduleRows(arrival, destinationName, resolution.timetableTrainNumber)
-        val destinationSchedules = destinationRows.findTrainAt(resolution.timetableTrainNumber, destinationName)
-        val diagnosticCounts = DestinationStopDiagnostic(
-            originScheduleMatchCount = resolution.originSchedules.size,
-            destinationScheduleMatchCount = destinationSchedules.size,
-            attemptedTimetableTrainNumbers = resolution.attemptedTrainNumbers,
-            resolvedTimetableTrainNumber = resolution.timetableTrainNumber,
-        )
-        if (destinationSchedules.isEmpty()) {
-            return DestinationStopDecision(
-                status = DestinationStopStatus.DOES_NOT_STOP,
-                diagnostic = diagnosticCounts.copy(reason = DestinationStopReason.DESTINATION_TRAIN_NOT_FOUND),
-            )
-        }
-
-        // 같은 열차가 목적지역에 있었더라도 이미 출발역을 지나온 경로라면 승차 후에는 도달하지 않는다.
-        val hasFutureStop = resolution.originSchedules.any { origin ->
-            val originTime = origin.departureTimeSeconds() ?: return@any false
-            destinationSchedules.any { destination ->
-                val destinationTime = destination.arrivalTimeSeconds() ?: return@any false
-                destinationTime > originTime
+        val decisions = linkedMapOf<String, DestinationStopDecision>()
+        val candidates = mutableListOf<Candidate>()
+        for (arrival in arrivals) {
+            when {
+                arrival.terminalStation.sameStation(destinationName) -> {
+                    decisions[arrival.id] = decision(DestinationStopStatus.STOPS, DestinationStopReason.TERMINAL_MATCH)
+                }
+                apiKey.isBlank() -> {
+                    decisions[arrival.id] = decision(DestinationStopStatus.UNKNOWN, DestinationStopReason.MISSING_API_KEY)
+                }
+                arrival.trainNumber.isBlank() -> {
+                    decisions[arrival.id] = decision(DestinationStopStatus.UNKNOWN, DestinationStopReason.MISSING_TRAIN_NUMBER)
+                }
+                arrival.trainNumber.numericCore() == null -> {
+                    decisions[arrival.id] = decision(
+                        DestinationStopStatus.UNKNOWN,
+                        DestinationStopReason.INVALID_REALTIME_TRAIN_NUMBER,
+                    )
+                }
+                arrival.timetableLineName == null -> {
+                    decisions[arrival.id] = decision(DestinationStopStatus.UNKNOWN, DestinationStopReason.UNSUPPORTED_LINE)
+                }
+                else -> candidates += Candidate(
+                    arrival = arrival,
+                    realtimeNumericCore = checkNotNull(arrival.trainNumber.numericCore()),
+                    key = arrival.mappingKey(nowProvider()),
+                )
             }
         }
-        val hasComparableTimes = resolution.originSchedules.any { it.departureTimeSeconds() != null } &&
-            destinationSchedules.any { it.arrivalTimeSeconds() != null }
-        return when {
-            hasFutureStop -> DestinationStopDecision(
-                DestinationStopStatus.STOPS,
-                diagnosticCounts.copy(reason = DestinationStopReason.FUTURE_DESTINATION_FOUND),
-            )
-            hasComparableTimes -> DestinationStopDecision(
-                DestinationStopStatus.DOES_NOT_STOP,
-                diagnosticCounts.copy(reason = DestinationStopReason.DESTINATION_ALREADY_PASSED),
-            )
-            else -> DestinationStopDecision(
+
+        val fallbackCandidates = mutableListOf<MappedCandidate>()
+        for (candidate in candidates) {
+            val mappedTrainNumber = mappingStore.find(candidate.key)
+            if (mappedTrainNumber == null) {
+                fallbackCandidates += MappedCandidate(candidate, null)
+                continue
+            }
+
+            when (val lookup = scheduleRows(candidate.arrival, destinationName, mappedTrainNumber)) {
+                is ScheduleLookup.Failure -> decisions[candidate.arrival.id] = lookupFailure(mappedTrainNumber)
+                is ScheduleLookup.Success -> {
+                    val matches = lookup.rows.findTrainAt(mappedTrainNumber, destinationName)
+                    if (matches.isNotEmpty()) {
+                        decisions[candidate.arrival.id] = DestinationStopDecision(
+                            status = DestinationStopStatus.STOPS,
+                            diagnostic = DestinationStopDiagnostic(
+                                reason = DestinationStopReason.MAPPED_DESTINATION_FOUND,
+                                destinationScheduleMatchCount = matches.size,
+                                attemptedTimetableTrainNumbers = listOf(mappedTrainNumber),
+                                resolvedTimetableTrainNumber = mappedTrainNumber,
+                                existingTimetableTrainNumber = mappedTrainNumber,
+                            ),
+                        )
+                    } else {
+                        fallbackCandidates += MappedCandidate(candidate, mappedTrainNumber)
+                    }
+                }
+            }
+        }
+
+        fallbackCandidates
+            .groupBy {
+                ScheduleContext(
+                    checkNotNull(it.candidate.arrival.timetableLineName),
+                    it.candidate.arrival.direction,
+                )
+            }
+            .forEach { (_, group) ->
+                resolveFallbackGroup(group, originName, destinationName, decisions)
+            }
+
+        return arrivals.associate { arrival ->
+            arrival.id to (decisions[arrival.id] ?: decision(
                 DestinationStopStatus.UNKNOWN,
-                diagnosticCounts.copy(reason = DestinationStopReason.SCHEDULE_TIME_UNAVAILABLE),
-            )
+                DestinationStopReason.LOOKUP_FAILED,
+            ))
         }
     }
 
-    private suspend fun resolveTimetableTrainNumber(
-        arrival: TrainArrival,
+    private suspend fun resolveFallbackGroup(
+        group: List<MappedCandidate>,
         originName: String,
-        normalizedRealtimeTrainNumber: String,
-    ): ResolvedTrainNumber? {
-        val now = nowProvider()
-        val key = TrainNumberMappingKey(
-            timetableLineName = checkNotNull(arrival.timetableLineName),
-            realtimeTrainNumber = normalizedRealtimeTrainNumber,
-            direction = arrival.direction.trim(),
-            terminalStation = arrival.terminalStation.normalizeTerminalName(),
-            trainType = arrival.trainType.trim(),
-            dayType = now.dayType(),
-        )
-        val timetableTrainNumber = mappingStore.find(key) ?: return null
-        val originSchedules = getScheduleRows(arrival, originName, timetableTrainNumber)
-            .findTrainAt(timetableTrainNumber, originName)
-        if (originSchedules.isEmpty()) return null
-        return ResolvedTrainNumber(
-            timetableTrainNumber = timetableTrainNumber,
-            originSchedules = originSchedules,
-            attemptedTrainNumbers = listOf(timetableTrainNumber),
-        )
+        destinationName: String,
+        decisions: MutableMap<String, DestinationStopDecision>,
+    ) {
+        val representative = group.first().candidate.arrival
+        val destinationLookup = scheduleRows(representative, destinationName, "")
+        if (destinationLookup is ScheduleLookup.Failure) {
+            group.forEach { mapped -> decisions[mapped.candidate.arrival.id] = lookupFailure(mapped.existingMapping) }
+            return
+        }
+        val destinationRows = (destinationLookup as ScheduleLookup.Success).rows
+
+        for (mapped in group) {
+            val candidate = mapped.candidate
+            val discovered = destinationRows
+                .filter { row ->
+                    row.stnNm.sameStation(destinationName) &&
+                        row.trainno.numericCore() == candidate.realtimeNumericCore
+                }
+                .map { it.trainno }
+                .filter(String::isNotBlank)
+                .distinct()
+
+            when {
+                discovered.isEmpty() -> {
+                    decisions[candidate.arrival.id] = DestinationStopDecision(
+                        status = DestinationStopStatus.DOES_NOT_STOP,
+                        diagnostic = fallbackDiagnostic(
+                            reason = DestinationStopReason.DESTINATION_CANDIDATE_NOT_FOUND,
+                            mapped = mapped,
+                            discovered = discovered,
+                            destinationCount = 0,
+                        ),
+                    )
+                }
+                discovered.size > 1 -> {
+                    decisions[candidate.arrival.id] = DestinationStopDecision(
+                        status = DestinationStopStatus.UNKNOWN,
+                        diagnostic = fallbackDiagnostic(
+                            reason = DestinationStopReason.AMBIGUOUS_DESTINATION_CANDIDATES,
+                            mapped = mapped,
+                            discovered = discovered,
+                            destinationCount = destinationRows.count { row ->
+                                row.stnNm.sameStation(destinationName) && row.trainno in discovered
+                            },
+                        ),
+                    )
+                }
+                else -> resolveUniqueCandidate(
+                    mapped = mapped,
+                    trainNumber = discovered.single(),
+                    discovered = discovered,
+                    destinationRows = destinationRows,
+                    originName = originName,
+                    destinationName = destinationName,
+                    decisions = decisions,
+                )
+            }
+        }
     }
 
-    private suspend fun getScheduleRows(
+    private suspend fun resolveUniqueCandidate(
+        mapped: MappedCandidate,
+        trainNumber: String,
+        discovered: List<String>,
+        destinationRows: List<TrainScheduleItem>,
+        originName: String,
+        destinationName: String,
+        decisions: MutableMap<String, DestinationStopDecision>,
+    ) {
+        val candidate = mapped.candidate
+        when (val originLookup = scheduleRows(candidate.arrival, originName, trainNumber)) {
+            is ScheduleLookup.Failure -> {
+                decisions[candidate.arrival.id] = lookupFailure(
+                    attemptedTrainNumber = trainNumber,
+                    existingTrainNumber = mapped.existingMapping,
+                    discovered = discovered,
+                )
+            }
+            is ScheduleLookup.Success -> {
+                val originMatches = originLookup.rows.findTrainAt(trainNumber, originName)
+                if (originMatches.isEmpty()) {
+                    decisions[candidate.arrival.id] = DestinationStopDecision(
+                        status = DestinationStopStatus.UNKNOWN,
+                        diagnostic = fallbackDiagnostic(
+                            reason = DestinationStopReason.ORIGIN_VALIDATION_FAILED,
+                            mapped = mapped,
+                            discovered = discovered,
+                            destinationCount = destinationRows.count {
+                                it.trainno == trainNumber && it.stnNm.sameStation(destinationName)
+                            },
+                            originCount = 0,
+                            resolved = trainNumber,
+                        ),
+                    )
+                    return
+                }
+
+                mappingStore.upsert(candidate.key, trainNumber)
+                val corrected = mapped.existingMapping != null && mapped.existingMapping != trainNumber
+                decisions[candidate.arrival.id] = DestinationStopDecision(
+                    status = DestinationStopStatus.STOPS,
+                    diagnostic = fallbackDiagnostic(
+                        reason = if (corrected) {
+                            DestinationStopReason.CORRECTED_MAPPING_FOUND
+                        } else {
+                            DestinationStopReason.DISCOVERED_MAPPING_FOUND
+                        },
+                        mapped = mapped,
+                        discovered = discovered,
+                        destinationCount = destinationRows.count {
+                            it.trainno == trainNumber && it.stnNm.sameStation(destinationName)
+                        },
+                        originCount = originMatches.size,
+                        resolved = trainNumber,
+                        mappingUpdated = true,
+                    ),
+                )
+            }
+        }
+    }
+
+    private suspend fun scheduleRows(
+        arrival: TrainArrival,
+        stationName: String,
+        timetableTrainNumber: String,
+    ): ScheduleLookup = try {
+        ScheduleLookup.Success(getAllScheduleRows(arrival, stationName, timetableTrainNumber))
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        ScheduleLookup.Failure
+    }
+
+    private suspend fun getAllScheduleRows(
         arrival: TrainArrival,
         stationName: String,
         timetableTrainNumber: String,
     ): List<TrainScheduleItem> {
-        val response = api.getTrainSchedule(
-            buildUrl(arrival, stationName, timetableTrainNumber),
-        ).response
-            ?: throw SeoulApiException("열차시간표 API 응답 형식을 확인할 수 없습니다.")
-        if (response.header.resultCode != "00") {
-            throw SeoulApiException(
-                response.header.resultMsg.ifBlank { "열차시간표 API 요청에 실패했습니다." },
-            )
+        val rows = mutableListOf<TrainScheduleItem>()
+        var startIndex = 1
+        while (true) {
+            val endIndex = startIndex + PAGE_SIZE - 1
+            val response = api.getTrainSchedule(
+                buildUrl(arrival, stationName, timetableTrainNumber, startIndex, endIndex),
+            ).response ?: throw SeoulApiException("열차시간표 API 응답 형식을 확인할 수 없습니다.")
+            if (response.header.resultCode != "00") {
+                throw SeoulApiException(response.header.resultMsg.ifBlank { "열차시간표 API 요청에 실패했습니다." })
+            }
+            val pageRows = response.body.items.item
+            rows += pageRows
+            if (endIndex >= response.body.totalCount) break
+            if (pageRows.isEmpty()) throw SeoulApiException("열차시간표 API 페이지 응답이 완전하지 않습니다.")
+            startIndex += PAGE_SIZE
         }
-        return response.body.items.item
+        return rows
     }
 
     private fun buildUrl(
         arrival: TrainArrival,
         stationName: String,
         timetableTrainNumber: String,
+        startIndex: Int,
+        endIndex: Int,
     ): HttpUrl {
         val now = nowProvider()
-        val dayType = now.dayType()
         val pathSegments = listOf(
-            apiKey,
-            "json",
-            "getTrainSch",
-            "1",
-            "1000",
-            "",
-            "N",
-            arrival.direction,
-            dayType,
-            checkNotNull(arrival.timetableLineName),
-            timetableTrainNumber,
-            stationName.removeSuffix("역"),
-            "", // stnCd: 시간표용 역 코드 데이터가 확보되기 전까지 역명으로 조회한다.
-            "",
-            "",
-            "",
-            "",
-            "",
+            apiKey, "json", "getTrainSch", startIndex.toString(), endIndex.toString(), "", "N",
+            arrival.direction, now.dayType(), checkNotNull(arrival.timetableLineName),
+            timetableTrainNumber, stationName.removeSuffix("역"), "", "", "", "", "", "",
             now.format(SEARCH_DATE_TIME_FORMAT),
         )
-        return BASE_URL.newBuilder()
-            .addPathSegments(pathSegments.joinToString("/"))
-            .build()
+        return BASE_URL.newBuilder().addPathSegments(pathSegments.joinToString("/")).build()
     }
 
     private companion object {
+        const val PAGE_SIZE = 1000
         val BASE_URL = "http://openapi.seoul.go.kr:8088/".toHttpUrl()
         val SEOUL_ZONE: ZoneId = ZoneId.of("Asia/Seoul")
         val SEARCH_DATE_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     }
 }
 
-private data class ResolvedTrainNumber(
-    val timetableTrainNumber: String,
-    val originSchedules: List<TrainScheduleItem>,
-    val attemptedTrainNumbers: List<String>,
+private data class Candidate(
+    val arrival: TrainArrival,
+    val realtimeNumericCore: String,
+    val key: TrainNumberMappingKey,
 )
 
-private fun decision(
-    status: DestinationStopStatus,
+private data class MappedCandidate(val candidate: Candidate, val existingMapping: String?)
+
+private data class ScheduleContext(val lineName: String, val direction: String)
+
+private sealed interface ScheduleLookup {
+    data class Success(val rows: List<TrainScheduleItem>) : ScheduleLookup
+    data object Failure : ScheduleLookup
+}
+
+private fun TrainArrival.mappingKey(now: LocalDateTime): TrainNumberMappingKey = TrainNumberMappingKey(
+    timetableLineName = checkNotNull(timetableLineName),
+    realtimeTrainNumber = checkNotNull(trainNumber.numericCore()),
+    direction = direction.trim(),
+    terminalStation = terminalStation.normalizeTerminalName(),
+    trainType = trainType.trim(),
+    dayType = now.dayType(),
+)
+
+private fun fallbackDiagnostic(
     reason: DestinationStopReason,
-): DestinationStopDecision = DestinationStopDecision(
-    status = status,
-    diagnostic = DestinationStopDiagnostic(reason = reason),
+    mapped: MappedCandidate,
+    discovered: List<String>,
+    destinationCount: Int,
+    originCount: Int? = null,
+    resolved: String? = null,
+    mappingUpdated: Boolean = false,
+) = DestinationStopDiagnostic(
+    reason = reason,
+    originScheduleMatchCount = originCount,
+    destinationScheduleMatchCount = destinationCount,
+    attemptedTimetableTrainNumbers = listOfNotNull(mapped.existingMapping, resolved).distinct(),
+    resolvedTimetableTrainNumber = resolved,
+    existingTimetableTrainNumber = mapped.existingMapping,
+    discoveredTimetableTrainNumbers = discovered,
+    mappingUpdated = mappingUpdated,
 )
 
-private fun List<TrainScheduleItem>.findTrainAt(
-    trainNumber: String,
-    stationName: String,
-): List<TrainScheduleItem> = filter {
+private fun lookupFailure(
+    attemptedTrainNumber: String?,
+    existingTrainNumber: String? = attemptedTrainNumber,
+    discovered: List<String> = emptyList(),
+) = DestinationStopDecision(
+    status = DestinationStopStatus.UNKNOWN,
+    diagnostic = DestinationStopDiagnostic(
+        reason = DestinationStopReason.LOOKUP_FAILED,
+        attemptedTimetableTrainNumbers = listOfNotNull(attemptedTrainNumber),
+        existingTimetableTrainNumber = existingTrainNumber,
+        discoveredTimetableTrainNumbers = discovered,
+    ),
+)
+
+private fun decision(status: DestinationStopStatus, reason: DestinationStopReason) =
+    DestinationStopDecision(status, DestinationStopDiagnostic(reason = reason))
+
+private fun List<TrainScheduleItem>.findTrainAt(trainNumber: String, stationName: String) = filter {
     it.trainno == trainNumber && it.stnNm.sameStation(stationName)
 }
 
-private fun String.normalizeRealtimeTrainNumber(): String? {
-    val value = trim()
-    if (value.isEmpty() || value.any { !it.isDigit() }) return null
-    return value.trimStart('0').ifEmpty { "0" }
+private fun String.numericCore(): String? {
+    val digits = filter(Char::isDigit)
+    if (digits.isEmpty()) return null
+    return digits.trimStart('0').ifEmpty { "0" }
 }
-
-private fun TrainScheduleItem.departureTimeSeconds(): Int? =
-    trainDptreTm.toServiceDaySeconds() ?: trainArvlTm.toServiceDaySeconds()
-
-private fun TrainScheduleItem.arrivalTimeSeconds(): Int? =
-    trainArvlTm.toServiceDaySeconds() ?: trainDptreTm.toServiceDaySeconds()
-
-private fun String?.toServiceDaySeconds(): Int? {
-    if (this == null) return null
-    val match = TIME_AT_END.find(this) ?: return null
-    val (hours, minutes, seconds) = match.destructured
-    val hour = hours.toIntOrNull() ?: return null
-    val minute = minutes.toIntOrNull() ?: return null
-    val second = seconds.toIntOrNull() ?: return null
-    if (minute !in 0..59 || second !in 0..59) return null
-    return hour * 3600 + minute * 60 + second
-}
-
-private val TIME_AT_END = Regex("(\\d{1,2}):(\\d{2}):(\\d{2})$")
 
 private fun LocalDateTime.dayType(): String = when (dayOfWeek) {
     DayOfWeek.SATURDAY, DayOfWeek.SUNDAY -> "주말"
     else -> "평일"
 }
 
-private fun String.sameStation(other: String): Boolean =
-    normalizeStationName() == other.normalizeStationName()
+private fun String.sameStation(other: String) = normalizeStationName() == other.normalizeStationName()
 
-private fun String.normalizeStationName(): String = trim().removeSuffix("역").replace(" ", "")
+private fun String.normalizeStationName() = trim().removeSuffix("역").replace(" ", "")
 
-private fun String.normalizeTerminalName(): String = normalizeStationName()
+private fun String.normalizeTerminalName() = normalizeStationName()
     .replace(TERMINAL_QUALIFIER, "")
     .removeSuffix("행")
 

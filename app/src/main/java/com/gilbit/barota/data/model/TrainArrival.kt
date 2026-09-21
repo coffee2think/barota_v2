@@ -64,6 +64,9 @@ data class DestinationStopDiagnostic(
     val destinationScheduleMatchCount: Int? = null,
     val attemptedTimetableTrainNumbers: List<String> = emptyList(),
     val resolvedTimetableTrainNumber: String? = null,
+    val existingTimetableTrainNumber: String? = null,
+    val discoveredTimetableTrainNumbers: List<String> = emptyList(),
+    val mappingUpdated: Boolean = false,
 )
 
 enum class DestinationStopReason {
@@ -73,11 +76,11 @@ enum class DestinationStopReason {
     MISSING_TRAIN_NUMBER,
     INVALID_REALTIME_TRAIN_NUMBER,
     UNSUPPORTED_LINE,
-    ORIGIN_TRAIN_NOT_FOUND,
-    TIMETABLE_TRAIN_NUMBER_NOT_FOUND,
-    DESTINATION_TRAIN_NOT_FOUND,
-    FUTURE_DESTINATION_FOUND,
-    DESTINATION_ALREADY_PASSED,
-    SCHEDULE_TIME_UNAVAILABLE,
+    MAPPED_DESTINATION_FOUND,
+    DISCOVERED_MAPPING_FOUND,
+    CORRECTED_MAPPING_FOUND,
+    DESTINATION_CANDIDATE_NOT_FOUND,
+    AMBIGUOUS_DESTINATION_CANDIDATES,
+    ORIGIN_VALIDATION_FAILED,
     LOOKUP_FAILED,
 }

@@ -6,6 +6,7 @@ import com.gilbit.barota.data.model.TrainNumberMappingKey
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -47,8 +48,19 @@ class AssetTrainNumberMappingStore private constructor(
         MappingIndex(exact, unambiguousWithoutTerminal)
     }
 
+    private val runtimeMappings = ConcurrentHashMap<TrainNumberMappingKey, String>()
+
     override suspend fun find(key: TrainNumberMappingKey): String? = withContext(Dispatchers.IO) {
-        mappingIndex.exact[key] ?: mappingIndex.unambiguousWithoutTerminal[key.withoutTerminal()]
+        runtimeMappings[key]
+            ?: mappingIndex.exact[key]
+            ?: mappingIndex.unambiguousWithoutTerminal[key.withoutTerminal()]
+    }
+
+    override suspend fun upsert(
+        key: TrainNumberMappingKey,
+        timetableTrainNumber: String,
+    ) = withContext(Dispatchers.IO) {
+        runtimeMappings[key] = timetableTrainNumber
     }
 
     private companion object {

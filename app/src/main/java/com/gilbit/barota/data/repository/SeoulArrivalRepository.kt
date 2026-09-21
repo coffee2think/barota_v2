@@ -15,11 +15,7 @@ import com.gilbit.barota.data.remote.SeoulSubwayApi
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
-import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.supervisorScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 
 @Singleton
 class SeoulArrivalRepository @Inject constructor(
@@ -59,33 +55,25 @@ class SeoulArrivalRepository @Inject constructor(
             filteredRows.map { it.toDomain(route.line, route.timetableLineName) },
         )
 
-        return supervisorScope {
-            val timetableConcurrency = Semaphore(4)
-            arrivals.map { arrival ->
-                async {
-                    val decision = timetableConcurrency.withPermit {
-                        runCatching {
-                            trainStopRepository.getDestinationStopDecision(
-                                arrival = arrival,
-                                originName = route.originName,
-                                destinationName = route.destinationName,
-                            )
-                        }.getOrElse { error ->
-                            if (error is CancellationException) throw error
-                            DestinationStopDecision(
-                                status = DestinationStopStatus.UNKNOWN,
-                                diagnostic = DestinationStopDiagnostic(
-                                    reason = DestinationStopReason.LOOKUP_FAILED,
-                                ),
-                            )
-                        }
-                    }
-                    arrival.copy(
-                        destinationStopStatus = decision.status,
-                        destinationStopDiagnostic = decision.diagnostic,
-                    )
-                }
-            }.map { it.await() }
+        val decisions = runCatching {
+            trainStopRepository.getDestinationStopDecisions(
+                arrivals = arrivals,
+                originName = route.originName,
+                destinationName = route.destinationName,
+            )
+        }.getOrElse { error ->
+            if (error is CancellationException) throw error
+            emptyMap()
+        }
+        return arrivals.map { arrival ->
+            val decision = decisions[arrival.id] ?: DestinationStopDecision(
+                status = DestinationStopStatus.UNKNOWN,
+                diagnostic = DestinationStopDiagnostic(reason = DestinationStopReason.LOOKUP_FAILED),
+            )
+            arrival.copy(
+                destinationStopStatus = decision.status,
+                destinationStopDiagnostic = decision.diagnostic,
+            )
         }
     }
 }

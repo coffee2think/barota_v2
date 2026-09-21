@@ -4,4 +4,6 @@ import com.gilbit.barota.data.model.TrainNumberMappingKey
 
 interface TrainNumberMappingStore {
     suspend fun find(key: TrainNumberMappingKey): String?
+
+    suspend fun upsert(key: TrainNumberMappingKey, timetableTrainNumber: String)
 }

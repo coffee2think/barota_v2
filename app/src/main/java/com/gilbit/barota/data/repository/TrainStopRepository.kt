@@ -4,9 +4,9 @@ import com.gilbit.barota.data.model.DestinationStopDecision
 import com.gilbit.barota.data.model.TrainArrival
 
 interface TrainStopRepository {
-    suspend fun getDestinationStopDecision(
-        arrival: TrainArrival,
+    suspend fun getDestinationStopDecisions(
+        arrivals: List<TrainArrival>,
         originName: String,
         destinationName: String,
-    ): DestinationStopDecision
+    ): Map<String, DestinationStopDecision>
 }

@@ -90,4 +90,18 @@ class TrainNumberMappingAssetTest {
             )
         }
     }
+
+    @Test
+    fun runtimeMappingOverridesAssetOnlyForCurrentStoreInstance() = runTest {
+        val mapping = asset.mappings.first()
+        val store = AssetTrainNumberMappingStore(json, content)
+
+        store.upsert(mapping.key(), "RUNTIME-TRAIN")
+
+        assertEquals("RUNTIME-TRAIN", store.find(mapping.key()))
+        assertEquals(
+            mapping.timetableTrainNumber,
+            AssetTrainNumberMappingStore(json, content).find(mapping.key()),
+        )
+    }
 }
