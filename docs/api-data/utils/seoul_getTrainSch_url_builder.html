@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>서울시 열차시간표 API URL 생성기</title>
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --panel: #ffffff;
+    --text: #17202a;
+    --muted: #687482;
+    --line: #dfe5eb;
+    --accent: #1368e8;
+    --accent2: #0d55c2;
+    --danger: #c62828;
+    --ok: #18794e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .wrap {
+    max-width: 1100px;
+    margin: 36px auto;
+    padding: 0 18px 50px;
+  }
+  h1 { margin: 0 0 8px; font-size: 28px; }
+  .desc { color: var(--muted); margin: 0 0 24px; line-height: 1.55; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+    margin-bottom: 18px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.035);
+  }
+  .section-title {
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 16px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 16px;
+  }
+  .field { min-width: 0; }
+  .field.full { grid-column: 1 / -1; }
+  label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 650;
+    font-size: 14px;
+    margin-bottom: 7px;
+  }
+  .req {
+    font-size: 11px;
+    color: #fff;
+    background: var(--danger);
+    padding: 2px 6px;
+    border-radius: 999px;
+  }
+  .opt {
+    font-size: 11px;
+    color: var(--muted);
+    background: #eef1f4;
+    padding: 2px 6px;
+    border-radius: 999px;
+  }
+  .help {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 5px;
+    line-height: 1.45;
+  }
+  input, select {
+    width: 100%;
+    padding: 11px 12px;
+    border: 1px solid #cfd7df;
+    border-radius: 9px;
+    background: #fff;
+    font-size: 14px;
+    outline: none;
+  }
+  input:focus, select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(19,104,232,.10);
+  }
+  .inline {
+    display: flex;
+    gap: 8px;
+  }
+  .inline input { flex: 1; }
+  button {
+    border: 0;
+    border-radius: 9px;
+    padding: 11px 15px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .primary { background: var(--accent); color: white; }
+  .primary:hover { background: var(--accent2); }
+  .secondary { background: #eaf1fb; color: #174f9c; }
+  .ghost { background: #eef1f4; color: #34404c; }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+    margin-top: 18px;
+  }
+  .urlbox {
+    width: 100%;
+    min-height: 88px;
+    resize: vertical;
+    border: 1px solid #cfd7df;
+    border-radius: 9px;
+    padding: 12px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    word-break: break-all;
+  }
+  .status {
+    min-height: 20px;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .status.error { color: var(--danger); }
+  .status.ok { color: var(--ok); }
+  details { margin-top: 14px; }
+  summary { cursor: pointer; font-weight: 650; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+    font-size: 13px;
+  }
+  th, td {
+    border-bottom: 1px solid var(--line);
+    padding: 9px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #f7f9fb; }
+  code {
+    background: #f1f3f5;
+    border-radius: 5px;
+    padding: 2px 5px;
+  }
+  @media (max-width: 760px) {
+    .grid { grid-template-columns: 1fr; }
+    .field.full { grid-column: auto; }
+    .inline { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>서울시 열차시간표 API URL 생성기</h1>
+  <p class="desc">
+    서울 열린데이터광장 <strong>OA-22750 / getTrainSch</strong> 요청인자를 입력해 호출 URL을 만듭니다.
+    선택 인자를 건너뛰고 뒤쪽 인자를 사용할 때는 빈 경로를 자동으로 <code>%20</code>으로 채웁니다.
+  </p>
+
+  <div class="panel">
+    <div class="section-title">기본 요청 정보</div>
+    <div class="grid">
+      <div class="field full">
+        <label>KEY <span class="req">필수</span></label>
+        <input id="key" type="password" placeholder="서울 열린데이터광장 인증키" autocomplete="off" />
+        <div class="help">URL 생성 시 실제 인증키가 들어갑니다. 화면 표시/숨김 버튼을 이용할 수 있습니다.</div>
+      </div>
+
+      <div class="field">
+        <label>TYPE <span class="req">필수</span></label>
+        <select id="type">
+          <option value="json" selected>json</option>
+          <option value="xml">xml</option>
+          <option value="xmlf">xmlf</option>
+          <option value="xls">xls</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>SERVICE <span class="req">필수</span></label>
+        <input id="service" value="getTrainSch" readonly />
+      </div>
+
+      <div class="field">
+        <label>START_INDEX <span class="req">필수</span></label>
+        <input id="startIndex" type="number" min="1" value="1" />
+      </div>
+
+      <div class="field">
+        <label>END_INDEX <span class="req">필수</span></label>
+        <input id="endIndex" type="number" min="1" value="100" />
+        <div class="help">한 번에 최대 1000건 범위 권장</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="section-title">시간표 필수 조건</div>
+    <div class="grid">
+      <div class="field">
+        <label>selectFields <span class="opt">선택</span></label>
+        <input id="selectFields" placeholder="예: stnNm,trainno,trainArvlTm" />
+        <div class="help">비우면 전체 항목 조회</div>
+      </div>
+
+      <div class="field">
+        <label>tmprTmtblYn <span class="req">필수</span></label>
+        <select id="tmprTmtblYn">
+          <option value="N" selected>N</option>
+          <option value="Y">Y</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>upbdnbSe <span class="req">필수</span></label>
+        <select id="upbdnbSe">
+          <option value="상행" selected>상행</option>
+          <option value="하행">하행</option>
+          <option value="내선">내선</option>
+          <option value="외선">외선</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>wkndSe <span class="req">필수</span></label>
+        <select id="wkndSe">
+          <option value="평일" selected>평일</option>
+          <option value="주말">주말</option>
+          <option value="상시">상시</option>
+        </select>
+      </div>
+
+      <div class="field full">
+        <label>lineNm <span class="req">필수</span></label>
+        <input id="lineNm" value="1호선" placeholder="예: 1호선" />
+        <div class="help">호선명 포함 검색</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="section-title">추가 검색 조건</div>
+    <div class="grid">
+      <div class="field">
+        <label>trainno <span class="opt">선택</span></label>
+        <input id="trainno" placeholder="열차번호" />
+      </div>
+      <div class="field">
+        <label>stnNm <span class="opt">선택</span></label>
+        <input id="stnNm" placeholder="역명, 예: 독산" />
+      </div>
+      <div class="field">
+        <label>stnCd <span class="opt">선택</span></label>
+        <input id="stnCd" placeholder="역코드" />
+      </div>
+      <div class="field">
+        <label>brlnNm <span class="opt">선택</span></label>
+        <input id="brlnNm" placeholder="지선명" />
+      </div>
+      <div class="field">
+        <label>dptreStnNm <span class="opt">선택</span></label>
+        <input id="dptreStnNm" placeholder="출발역명" />
+      </div>
+      <div class="field">
+        <label>dptreStnCd <span class="opt">선택</span></label>
+        <input id="dptreStnCd" placeholder="출발역코드" />
+      </div>
+      <div class="field">
+        <label>arvlStnNm <span class="opt">선택</span></label>
+        <input id="arvlStnNm" placeholder="도착역명" />
+      </div>
+      <div class="field">
+        <label>arvlStnCd <span class="opt">선택</span></label>
+        <input id="arvlStnCd" placeholder="도착역코드" />
+      </div>
+      <div class="field full">
+        <label>searchDt <span class="opt">선택</span></label>
+        <div class="inline">
+          <input id="searchDt" placeholder="YYYY-MM-DD hh:mm:ss" />
+          <button type="button" class="secondary" id="nowBtn">현재 시각 입력</button>
+          <button type="button" class="ghost" id="clearDateBtn">비우기</button>
+        </div>
+        <div class="help">해당 검색일시를 기준으로 유효한 시간표를 조회합니다.</div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="primary" type="button" id="buildBtn">URL 생성</button>
+      <button class="secondary" type="button" id="toggleKeyBtn">인증키 표시/숨김</button>
+      <button class="ghost" type="button" id="resetBtn">입력 초기화</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="section-title">생성된 요청 URL</div>
+    <textarea id="result" class="urlbox" readonly placeholder="URL 생성 버튼을 누르세요."></textarea>
+    <div class="actions">
+      <button class="primary" type="button" id="copyBtn">URL 복사</button>
+      <button class="secondary" type="button" id="openBtn">새 탭에서 요청</button>
+    </div>
+    <div id="status" class="status"></div>
+
+    <details>
+      <summary>URL 경로 순서 보기</summary>
+      <table>
+        <thead>
+          <tr><th>순서</th><th>인자</th><th>설명</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1~5</td><td>KEY / TYPE / SERVICE / START_INDEX / END_INDEX</td><td>기본 Open API 경로</td></tr>
+          <tr><td>6</td><td>selectFields</td><td>출력 항목 선택</td></tr>
+          <tr><td>7~10</td><td>tmprTmtblYn / upbdnbSe / wkndSe / lineNm</td><td>필수 시간표 조건</td></tr>
+          <tr><td>11~18</td><td>trainno ~ arvlStnCd</td><td>추가 검색 조건</td></tr>
+          <tr><td>19</td><td>searchDt</td><td>유효 시간표 기준 일시</td></tr>
+        </tbody>
+      </table>
+    </details>
+  </div>
+</div>
+
+<script>
+const BASE_URL = "http://openapi.seoul.go.kr:8088";
+const optionalIds = [
+  "selectFields",
+  "trainno",
+  "stnNm",
+  "stnCd",
+  "brlnNm",
+  "dptreStnNm",
+  "dptreStnCd",
+  "arvlStnNm",
+  "arvlStnCd",
+  "searchDt"
+];
+
+const $ = id => document.getElementById(id);
+
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+
+function formatLocalDateTime(date = new Date()) {
+  return [
+    date.getFullYear(), "-", pad(date.getMonth() + 1), "-", pad(date.getDate()),
+    " ", pad(date.getHours()), ":", pad(date.getMinutes()), ":", pad(date.getSeconds())
+  ].join("");
+}
+
+function enc(value) {
+  return encodeURIComponent(String(value));
+}
+
+function setStatus(message, type = "") {
+  const el = $("status");
+  el.textContent = message;
+  el.className = "status" + (type ? " " + type : "");
+}
+
+function validate() {
+  const required = [
+    ["key", "KEY(인증키)"],
+    ["type", "TYPE"],
+    ["service", "SERVICE"],
+    ["startIndex", "START_INDEX"],
+    ["endIndex", "END_INDEX"],
+    ["tmprTmtblYn", "tmprTmtblYn"],
+    ["upbdnbSe", "upbdnbSe"],
+    ["wkndSe", "wkndSe"],
+    ["lineNm", "lineNm"]
+  ];
+
+  for (const [id, label] of required) {
+    if (!$((id)).value.trim()) {
+      return `${label} 값을 입력하세요.`;
+    }
+  }
+
+  const start = Number($("startIndex").value);
+  const end = Number($("endIndex").value);
+
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < 1) {
+    return "START_INDEX와 END_INDEX는 1 이상의 정수여야 합니다.";
+  }
+  if (start > end) {
+    return "START_INDEX는 END_INDEX보다 클 수 없습니다.";
+  }
+  if ((end - start + 1) > 1000) {
+    return "한 번의 요청 범위는 최대 1000건을 넘지 않도록 설정하세요.";
+  }
+
+  const searchDt = $("searchDt").value.trim();
+  if (searchDt && !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(searchDt)) {
+    return "searchDt 형식은 YYYY-MM-DD hh:mm:ss 이어야 합니다.";
+  }
+
+  return "";
+}
+
+function buildUrl() {
+  const error = validate();
+  if (error) {
+    $("result").value = "";
+    setStatus(error, "error");
+    return "";
+  }
+
+  // 문서의 요청인자 순서 그대로 구성.
+  const args = [
+    $("key").value.trim(),
+    $("type").value.trim(),
+    $("service").value.trim(),
+    $("startIndex").value.trim(),
+    $("endIndex").value.trim(),
+    $("selectFields").value.trim(),
+    $("tmprTmtblYn").value.trim(),
+    $("upbdnbSe").value.trim(),
+    $("wkndSe").value.trim(),
+    $("lineNm").value.trim(),
+    $("trainno").value.trim(),
+    $("stnNm").value.trim(),
+    $("stnCd").value.trim(),
+    $("brlnNm").value.trim(),
+    $("dptreStnNm").value.trim(),
+    $("dptreStnCd").value.trim(),
+    $("arvlStnNm").value.trim(),
+    $("arvlStnCd").value.trim(),
+    $("searchDt").value.trim()
+  ];
+
+  // 마지막에 연속해서 비어 있는 선택 인자는 URL에서 제거.
+  while (args.length > 10 && args[args.length - 1] === "") {
+    args.pop();
+  }
+
+  // 중간의 빈 선택 인자는 위치 보존을 위해 공백(%20)으로 유지.
+  const segments = args.map((value, index) => {
+    const isOptionalPosition =
+      index === 5 ||  // selectFields
+      index >= 10;    // trainno ~ searchDt
+
+    if (isOptionalPosition && value === "") {
+      return "%20";
+    }
+    return enc(value);
+  });
+
+  const url = BASE_URL + "/" + segments.join("/");
+  $("result").value = url;
+  setStatus("URL을 생성했습니다.", "ok");
+  return url;
+}
+
+$("buildBtn").addEventListener("click", buildUrl);
+
+$("nowBtn").addEventListener("click", () => {
+  $("searchDt").value = formatLocalDateTime();
+  buildUrl();
+});
+
+$("clearDateBtn").addEventListener("click", () => {
+  $("searchDt").value = "";
+  buildUrl();
+});
+
+$("toggleKeyBtn").addEventListener("click", () => {
+  $("key").type = $("key").type === "password" ? "text" : "password";
+});
+
+$("copyBtn").addEventListener("click", async () => {
+  const url = $("result").value || buildUrl();
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(url);
+    setStatus("URL을 클립보드에 복사했습니다.", "ok");
+  } catch {
+    $("result").focus();
+    $("result").select();
+    document.execCommand("copy");
+    setStatus("URL을 클립보드에 복사했습니다.", "ok");
+  }
+});
+
+$("openBtn").addEventListener("click", () => {
+  const url = $("result").value || buildUrl();
+  if (url) window.open(url, "_blank", "noopener,noreferrer");
+});
+
+$("resetBtn").addEventListener("click", () => {
+  $("key").value = "";
+  $("type").value = "json";
+  $("startIndex").value = "1";
+  $("endIndex").value = "100";
+  $("selectFields").value = "";
+  $("tmprTmtblYn").value = "N";
+  $("upbdnbSe").value = "상행";
+  $("wkndSe").value = "평일";
+  $("lineNm").value = "1호선";
+  optionalIds.slice(1).forEach(id => $(id).value = "");
+  $("result").value = "";
+  setStatus("");
+});
+
+[
+  "key","type","startIndex","endIndex","selectFields","tmprTmtblYn","upbdnbSe",
+  "wkndSe","lineNm","trainno","stnNm","stnCd","brlnNm","dptreStnNm",
+  "dptreStnCd","arvlStnNm","arvlStnCd","searchDt"
+].forEach(id => {
+  $(id).addEventListener("change", () => {
+    if ($("key").value.trim()) buildUrl();
+  });
+});
+</script>
+</body>
+</html>

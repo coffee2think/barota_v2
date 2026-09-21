@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>서울 열린데이터광장 Open API URL 폼 생성기</title>
+<style>
+  :root{
+    --bg:#f4f6f8;--card:#fff;--line:#dfe4ea;--text:#17202a;--muted:#66717d;
+    --blue:#1769e0;--blue2:#0f57bd;--red:#c62828;--green:#147a4b;--chip:#eef2f6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  .wrap{max-width:1180px;margin:32px auto;padding:0 18px 48px}
+  h1{font-size:28px;margin:0 0 8px}
+  h2{font-size:18px;margin:0 0 16px}
+  p{line-height:1.55}
+  .sub{margin:0 0 22px;color:var(--muted)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.035)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .full{grid-column:1/-1}
+  label{display:block;font-weight:700;font-size:14px;margin-bottom:7px}
+  input,textarea,select{
+    width:100%;border:1px solid #cbd3dc;border-radius:9px;background:#fff;color:var(--text);
+    padding:11px 12px;font:inherit;outline:none
+  }
+  input:focus,textarea:focus,select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(23,105,224,.10)}
+  textarea{min-height:120px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px;line-height:1.5}
+  #tableHtml{min-height:210px}
+  .help{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.45}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  button{border:0;border-radius:9px;padding:10px 14px;font-weight:750;cursor:pointer}
+  .primary{background:var(--blue);color:white}.primary:hover{background:var(--blue2)}
+  .secondary{background:#e8f0fb;color:#174f9c}
+  .ghost{background:#edf0f3;color:#394550}
+  .danger{background:#fdecec;color:#9d2525}
+  .status{min-height:20px;margin-top:10px;font-size:13px;color:var(--muted)}
+  .status.ok{color:var(--green)} .status.err{color:var(--red)}
+  .badge{display:inline-block;font-size:11px;border-radius:999px;padding:2px 7px;margin-left:6px;vertical-align:1px}
+  .req{background:#fee6e6;color:#a82020}.opt{background:var(--chip);color:#68727d}
+  .param-grid{display:grid;grid-template-columns:1fr;gap:14px}
+  .field{min-width:0}
+  .meta{font-size:12px;color:var(--muted);margin-top:5px;white-space:pre-wrap}
+  .urlbox{min-height:92px}
+  .hidden{display:none!important}
+  .summary{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .summary span{background:#f1f4f7;border:1px solid var(--line);border-radius:999px;padding:6px 9px;font-size:12px}
+  details{margin-top:12px}
+  summary{cursor:pointer;font-weight:700}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  th,td{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}
+  th{background:#f7f9fb}
+  code{background:#f0f2f4;border-radius:5px;padding:2px 5px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+  @media(max-width:780px){.grid,.param-grid{grid-template-columns:1fr}.full{grid-column:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>서울 열린데이터광장 Open API URL 폼 생성기</h1>
+  <p class="sub">
+    서울 열린데이터광장에서 복사한 <strong>샘플 요청 URL</strong>과 <strong>요청인자 테이블 HTML</strong>을 붙여넣으면
+    요청 폼을 자동 생성합니다. 샘플 URL은 <code>(인증키)</code> 위치를 기준으로 분석하므로
+    <code>/api/subway/</code> 같은 앞 경로도 자동 보존합니다. 외부 페이지를 크롤링하지 않으므로 이 HTML 파일 하나만으로 동작합니다.
+  </p>
+
+  <section class="card">
+    <h2>1. 문서에서 정보 붙여넣기</h2>
+    <div class="grid">
+      <div class="full">
+        <label for="sampleUrl">샘플 API URL</label>
+        <textarea id="sampleUrl" placeholder="예) http://openapi.seoul.go.kr:8088/인증키/json/getTrainSch/1/100/%20/Y/상행/평일/1호선"></textarea>
+        <div class="help">문서에 표시된 샘플 URL 또는 실제 호출 URL을 붙여넣으세요.</div>
+      </div>
+      <div class="full">
+        <label for="tableHtml">요청인자 테이블 HTML</label>
+        <textarea id="tableHtml" placeholder="<table> ... 요청인자 표의 HTML ... </table>"></textarea>
+        <div class="help">
+          개발자도구에서 요청인자 표의 <code>&lt;table&gt;</code> 또는 <code>&lt;tbody&gt;</code> HTML을 복사해 붙여넣으면 됩니다.
+          여러 표가 들어있으면 요청인자로 보이는 표를 자동 선택합니다.
+        </div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="analyzeBtn" class="primary">분석하고 폼 생성</button>
+      <button id="clearSourceBtn" class="ghost">입력 비우기</button>
+    </div>
+    <div id="analyzeStatus" class="status"></div>
+  </section>
+
+  <section id="formCard" class="card hidden">
+    <h2>2. 자동 생성된 요청 폼</h2>
+    <div id="summary" class="summary"></div>
+
+    <div class="param-grid" id="baseFields"></div>
+
+    <hr style="border:0;border-top:1px solid var(--line);margin:20px 0">
+
+    <div id="dynamicFields" class="param-grid"></div>
+
+    <div class="actions">
+      <button id="buildBtn" class="primary">URL 생성</button>
+      <button id="toggleKeyBtn" class="secondary">인증키 표시/숨김</button>
+      <button id="fillNowBtn" class="ghost hidden">searchDt 현재 시각</button>
+    </div>
+
+    <details>
+      <summary>분석된 요청인자 보기</summary>
+      <div style="overflow:auto">
+        <table>
+          <thead><tr><th>#</th><th>인자명</th><th>필수여부</th><th>자료형</th><th>설명</th><th>샘플값</th></tr></thead>
+          <tbody id="parsedTableBody"></tbody>
+        </table>
+      </div>
+    </details>
+  </section>
+
+  <section id="resultCard" class="card hidden">
+    <h2>3. 생성된 요청 URL</h2>
+    <textarea id="resultUrl" class="urlbox mono" readonly></textarea>
+    <div class="actions">
+      <button id="copyBtn" class="primary">URL 복사</button>
+      <button id="openBtn" class="secondary">새 탭에서 요청</button>
+    </div>
+    <div id="resultStatus" class="status"></div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+
+  const STANDARD = ["KEY","TYPE","SERVICE","START_INDEX","END_INDEX"];
+  const state = {
+    baseUrl: "",
+    protocolHost: "",
+    prefixSegments: [],
+    standardValues: {},
+    params: [],
+    tableHeaders: []
+  };
+
+  function textOf(el) {
+    return (el?.textContent || "")
+      .replace(/\u00a0/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function norm(s) {
+    return (s || "")
+      .toLowerCase()
+      .replace(/[\s_\-\/()[\]{}:：]/g, "");
+  }
+
+  function decodeSafe(v) {
+    try { return decodeURIComponent(v); } catch { return v; }
+  }
+
+  function setStatus(id, msg, type="") {
+    const el = $(id);
+    el.textContent = msg;
+    el.className = "status" + (type ? " " + type : "");
+  }
+
+  function isRequiredText(s) {
+    const n = norm(s);
+    if (!n) return false;
+    if (n.includes("선택") || n === "n" || n === "no" || n.includes("optional")) return false;
+    return n.includes("필수") || n === "y" || n === "yes" || n.includes("required");
+  }
+
+  function scoreTable(table) {
+    const txt = norm(textOf(table));
+    let score = 0;
+    ["요청인자","요청변수","변수명","인자명","필수","선택","자료형","설명"].forEach(k => {
+      if (txt.includes(norm(k))) score += 2;
+    });
+    score += Math.min(table.querySelectorAll("tr").length, 10) * 0.1;
+    return score;
+  }
+
+  function parseInputHtml(raw) {
+    if (!raw.trim()) throw new Error("요청인자 테이블 HTML을 입력하세요.");
+
+    let html = raw.trim();
+    if (!/<table[\s>]/i.test(html)) {
+      if (/<tr[\s>]/i.test(html) || /<tbody[\s>]/i.test(html)) {
+        html = "<table>" + html + "</table>";
+      }
+    }
+
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const tables = [...doc.querySelectorAll("table")];
+    if (!tables.length) throw new Error("<table> 또는 <tbody>/<tr> 구조를 찾지 못했습니다.");
+
+    tables.sort((a,b) => scoreTable(b) - scoreTable(a));
+    const table = tables[0];
+
+    const rows = [...table.querySelectorAll("tr")].filter(tr => tr.querySelectorAll("th,td").length >= 2);
+    if (rows.length < 2) throw new Error("요청인자 표의 행을 충분히 찾지 못했습니다.");
+
+    // 헤더 후보: th가 있는 첫 행, 없으면 첫 행
+    let headerRowIndex = rows.findIndex(r => r.querySelector("th"));
+    if (headerRowIndex < 0) headerRowIndex = 0;
+
+    const headers = [...rows[headerRowIndex].querySelectorAll("th,td")].map(textOf);
+    const headerNorms = headers.map(norm);
+
+    function findCol(words) {
+      const ns = words.map(norm);
+      return headerNorms.findIndex(h => ns.some(w => h.includes(w) || w.includes(h)));
+    }
+
+    let nameCol = findCol(["요청인자","요청변수","인자명","변수명","항목명","필드명","컬럼명","parameter","name"]);
+    let reqCol  = findCol(["필수여부","필수/선택","필수선택","필수","구분","required"]);
+    let typeCol = findCol(["자료형","데이터타입","타입","형식","type"]);
+    let descCol = findCol(["설명","내용","비고","description"]);
+    let exCol   = findCol(["예시","예제","샘플","example"]);
+
+    // 헤더 추론이 실패하면 첫 열을 인자명으로 간주
+    if (nameCol < 0) nameCol = 0;
+
+    const result = [];
+    for (let i = headerRowIndex + 1; i < rows.length; i++) {
+      const cells = [...rows[i].querySelectorAll("th,td")].map(textOf);
+      if (!cells.length) continue;
+
+      const name = (cells[nameCol] || "").trim();
+      if (!name) continue;
+
+      // 단순 섹션 제목/병합 행 제외
+      if (cells.filter(Boolean).length === 1 && rows[i].querySelector("[colspan]")) continue;
+
+      const type = typeCol >= 0 ? (cells[typeCol] || "") : "";
+      const explicitRequiredText = reqCol >= 0 ? (cells[reqCol] || "") : "";
+
+      // 서울 열린데이터광장 표는 별도의 '필수여부' 열 없이
+      // 타입에 STRING(필수), STRING(선택)처럼 표시하는 경우가 있다.
+      // 필수여부 열이 없거나 비어 있으면 타입 열에서 필수/선택을 판별한다.
+      const requiredText = explicitRequiredText.trim()
+        ? explicitRequiredText
+        : (/[（(]\s*(필수|선택|required|optional)\s*[)）]/i.test(type) ? type : "");
+
+      const desc = descCol >= 0 ? (cells[descCol] || "") : "";
+      const example = exCol >= 0 ? (cells[exCol] || "") : "";
+
+      result.push({
+        name,
+        required: isRequiredText(requiredText),
+        requiredText,
+        type,
+        desc,
+        example
+      });
+    }
+
+    if (!result.length) throw new Error("표에서 요청인자를 추출하지 못했습니다.");
+
+    return { params: result, headers };
+  }
+
+  function extractUrl(raw) {
+    let s = raw.trim();
+    if (!s) throw new Error("샘플 API URL을 입력하세요.");
+
+    // 1) Markdown 링크의 표시 문자열을 우선 사용한다.
+    //    표시 URL에는 선택 인자 자리를 나타내는 실제 공백이 포함될 수 있으므로
+    //    일반적인 "공백 전까지 URL" 방식으로 자르면 안 된다.
+    //
+    // 예:
+    // [http://openapi.../1/5/ /N/상행/...](<http://...> "open api 새창열림")
+    const markdownLabel = s.match(/^\s*\[\s*(https?:\/\/[\s\S]*?)\s*\]\s*\(/i);
+    if (markdownLabel) {
+      s = markdownLabel[1].trim();
+    } else {
+      // 2) <http://...> 형태가 단독으로 들어온 경우
+      const angleUrl = s.match(/<\s*(https?:\/\/[\s\S]*?)\s*>/i);
+      if (angleUrl) {
+        s = angleUrl[1].trim();
+      } else if (/^https?:\/\//i.test(s)) {
+        // 3) URL 자체를 붙여넣은 경우 첫 줄 전체를 사용한다.
+        //    URL 경로 중간의 공백은 의도된 빈 요청인자일 수 있으므로 보존한다.
+        s = s.split(/\r?\n/)[0].trim();
+      } else {
+        // 4) 기타 문자열 안에 URL이 들어온 경우
+        const start = s.search(/https?:\/\//i);
+        if (start >= 0) {
+          s = s.slice(start).split(/\r?\n/)[0].trim();
+        }
+      }
+    }
+
+    // Markdown escape 제거
+    s = s.replace(/\\([()])/g, "$1");
+
+    // 문서 링크의 제목/닫는 문법이 뒤에 남은 경우 제거
+    s = s.replace(/>\s*["'][\s\S]*$/g, "").trim();
+    s = s.replace(/\s+["'][^"']*["']\s*\)?\s*$/g, "").trim();
+
+    return s;
+  }
+
+  function isKeyPlaceholder(segment) {
+    const s = decodeSafe(segment).trim().toLowerCase();
+    return (
+      s === "(인증키)" ||
+      s === "인증키" ||
+      s === "(apikey)" ||
+      s === "apikey" ||
+      s === "(api_key)" ||
+      s === "api_key" ||
+      s === "(key)" ||
+      s === "key"
+    );
+  }
+
+  function parseSampleUrl(raw) {
+    const s = extractUrl(raw);
+
+    let u;
+    try {
+      u = new URL(s);
+    } catch {
+      throw new Error("샘플 URL 형식을 확인하세요. http:// 또는 https://가 포함된 URL을 입력해야 합니다.");
+    }
+
+    // 빈 경로도 의미가 있으므로 filter(Boolean) 하지 않음.
+    // 다만 맨 앞의 '/' 때문에 생기는 첫 빈 요소는 제거.
+    const rawSeg = u.pathname.split("/");
+    if (rawSeg[0] === "") rawSeg.shift();
+    const seg = rawSeg.map(segment => {
+      const decoded = decodeSafe(segment);
+      return decoded.trim() === "" ? "" : decoded;
+    });
+
+    // '(인증키)' 위치를 기준으로 API 구조를 해석한다.
+    let keyIndex = seg.findIndex(isKeyPlaceholder);
+
+    // 혹시 실제 키가 들어간 샘플인 경우를 위한 보조 추론:
+    // 뒤에 TYPE(json/xml/xmlf/xls)가 오는 위치의 직전 세그먼트를 KEY로 간주.
+    if (keyIndex < 0) {
+      const typeIndex = seg.findIndex(x =>
+        ["json","xml","xmlf","xls"].includes(String(x).toLowerCase())
+      );
+      if (typeIndex > 0) keyIndex = typeIndex - 1;
+    }
+
+    if (keyIndex < 0 || seg.length < keyIndex + 5) {
+      throw new Error(
+        '샘플 URL에서 "(인증키)" 기준의 KEY / TYPE / SERVICE / START_INDEX / END_INDEX 구조를 찾지 못했습니다.'
+      );
+    }
+
+    const prefixSegments = seg.slice(0, keyIndex);
+    const apiSeg = seg.slice(keyIndex);
+
+    return {
+      protocolHost: u.origin,
+      prefixSegments,
+      values: {
+        KEY: apiSeg[0] || "",
+        TYPE: apiSeg[1] || "",
+        SERVICE: apiSeg[2] || "",
+        START_INDEX: apiSeg[3] || "",
+        END_INDEX: apiSeg[4] || ""
+      },
+      extra: apiSeg.slice(5)
+    };
+  }
+
+  function canonicalName(name) {
+    const n = norm(name);
+    if (["key","인증키"].includes(n)) return "KEY";
+    if (["type","파일타입","파일형식"].includes(n)) return "TYPE";
+    if (["service","서비스","서비스명"].includes(n)) return "SERVICE";
+    if (["startindex","시작위치","시작인덱스"].includes(n)) return "START_INDEX";
+    if (["endindex","종료위치","끝위치","종료인덱스"].includes(n)) return "END_INDEX";
+    return null;
+  }
+
+  function analyze() {
+    try {
+      const sample = parseSampleUrl($("sampleUrl").value);
+      const parsed = parseInputHtml($("tableHtml").value);
+
+      state.protocolHost = sample.protocolHost;
+      state.prefixSegments = sample.prefixSegments || [];
+      state.standardValues = sample.values;
+      state.tableHeaders = parsed.headers;
+
+      const tableParams = parsed.params;
+      const serviceParams = tableParams.filter(p => !canonicalName(p.name));
+
+      // 샘플 URL의 6번째 이후 경로를 요청인자 순서대로 기본값에 매핑
+      serviceParams.forEach((p, i) => {
+        p.sampleValue = sample.extra[i] ?? p.example ?? "";
+      });
+
+      // 표에 standard field가 있으면 메타데이터 저장
+      const stdMeta = {};
+      for (const p of tableParams) {
+        const c = canonicalName(p.name);
+        if (c) stdMeta[c] = p;
+      }
+
+      state.params = serviceParams;
+      renderForm(stdMeta);
+
+      setStatus(
+        "analyzeStatus",
+        `요청인자 ${serviceParams.length}개를 분석했습니다. 샘플 URL의 서비스명은 "${sample.values.SERVICE}"입니다.`,
+        "ok"
+      );
+      $("formCard").classList.remove("hidden");
+      $("resultCard").classList.add("hidden");
+      $("formCard").scrollIntoView({behavior:"smooth", block:"start"});
+    } catch (e) {
+      setStatus("analyzeStatus", e.message || String(e), "err");
+    }
+  }
+
+  function inferInputType(typeText) {
+    const t = String(typeText || "").toUpperCase();
+
+    if (/\b(INTEGER|INT|NUMBER|NUMERIC|DECIMAL|FLOAT|DOUBLE|LONG|SHORT)\b/.test(t)) {
+      return "number";
+    }
+
+    // 서울시 API의 날짜/시간 값은 "YYYY-MM-DD hh:mm:ss"처럼
+    // HTML datetime-local과 형식이 다른 경우가 많아 text로 유지한다.
+    return "text";
+  }
+
+  function makeField({id,label,value="",required=false,type="text",desc="",meta="",readonly=false}) {
+    const wrap = document.createElement("div");
+    wrap.className = "field";
+
+    const lab = document.createElement("label");
+    lab.htmlFor = id;
+    lab.innerHTML = escapeHtml(label) + `<span class="badge ${required ? "req":"opt"}">${required ? "필수":"선택"}</span>`;
+    wrap.appendChild(lab);
+
+    let input;
+    if (id === "base_TYPE") {
+      input = document.createElement("select");
+      ["json","xml","xmlf","xls"].forEach(v => {
+        const o = document.createElement("option");
+        o.value = v; o.textContent = v;
+        if ((value || "").toLowerCase() === v) o.selected = true;
+        input.appendChild(o);
+      });
+    } else {
+      input = document.createElement("input");
+      input.type = type;
+      input.value = value || "";
+    }
+    input.id = id;
+    input.dataset.required = required ? "1" : "0";
+    input.required = required;
+    if (readonly) input.readOnly = true;
+    wrap.appendChild(input);
+
+    const info = [desc, meta].filter(Boolean).join(" · ");
+    if (info) {
+      const help = document.createElement("div");
+      help.className = "meta";
+      help.textContent = info;
+      wrap.appendChild(help);
+    }
+    return wrap;
+  }
+
+  function renderForm(stdMeta) {
+    const base = $("baseFields");
+    const dyn = $("dynamicFields");
+    base.innerHTML = "";
+    dyn.innerHTML = "";
+
+    const v = state.standardValues;
+    base.appendChild(makeField({
+      id:"base_KEY", label:"KEY", value:v.KEY, required:true, type:"password",
+      desc: stdMeta.KEY?.desc || "서울 열린데이터광장 인증키"
+    }));
+    base.appendChild(makeField({
+      id:"base_TYPE", label:"TYPE", value:v.TYPE || "json", required:true,
+      desc: stdMeta.TYPE?.desc || "응답 파일 형식"
+    }));
+    base.appendChild(makeField({
+      id:"base_SERVICE", label:"SERVICE", value:v.SERVICE, required:true,
+      desc: stdMeta.SERVICE?.desc || "서비스명"
+    }));
+    base.appendChild(makeField({
+      id:"base_START_INDEX", label:"START_INDEX", value:v.START_INDEX || "1", required:true,
+      desc: stdMeta.START_INDEX?.desc || "요청 시작 위치"
+    }));
+    base.appendChild(makeField({
+      id:"base_END_INDEX", label:"END_INDEX", value:v.END_INDEX || "100", required:true,
+      desc: stdMeta.END_INDEX?.desc || "요청 종료 위치"
+    }));
+
+    const hasSearchDt = state.params.some(p => norm(p.name) === norm("searchDt"));
+    $("fillNowBtn").classList.toggle("hidden", !hasSearchDt);
+
+    state.params.forEach((p, i) => {
+      dyn.appendChild(makeField({
+        id:`param_${i}`,
+        label:p.name,
+        value:p.sampleValue ?? "",
+        required:p.required,
+        type: inferInputType(p.type),
+        desc:p.desc,
+        meta:""
+      }));
+    });
+
+    $("summary").innerHTML = `
+      <span>호스트: <b>${escapeHtml(state.protocolHost)}</b></span>
+      <span>앞 경로: <b>${escapeHtml(state.prefixSegments.length ? "/" + state.prefixSegments.join("/") : "(없음)")}</b></span>
+      <span>서비스: <b>${escapeHtml(v.SERVICE)}</b></span>
+      <span>서비스별 인자: <b>${state.params.length}개</b></span>
+    `;
+
+    const tbody = $("parsedTableBody");
+    tbody.innerHTML = "";
+    state.params.forEach((p,i) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${i+1}</td>
+        <td class="mono">${escapeHtml(p.name)}</td>
+        <td>${p.required ? "필수" : (escapeHtml(p.requiredText) || "선택")}</td>
+        <td>${escapeHtml(p.type)}</td>
+        <td>${escapeHtml(p.desc)}</td>
+        <td>${escapeHtml(p.sampleValue ?? p.example ?? "")}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? "").replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[c]));
+  }
+
+  function encodeSegment(v) {
+    return encodeURIComponent(String(v)).replace(/%20/g, "%20");
+  }
+
+  function encodeServicePath(v) {
+    return String(v)
+      .split("/")
+      .map(part => encodeSegment(part))
+      .join("/");
+  }
+
+  function buildUrl() {
+    setStatus("resultStatus", "");
+
+    const baseIds = ["KEY","TYPE","SERVICE","START_INDEX","END_INDEX"];
+    const baseVals = {};
+    for (const name of baseIds) {
+      const el = $(`base_${name}`);
+      const value = el.value.trim();
+      if (!value) {
+        setStatus("resultStatus", `${name} 값을 입력하세요.`, "err");
+        return "";
+      }
+      baseVals[name] = value;
+    }
+
+    const paramVals = state.params.map((p,i) => ({
+      p,
+      value: $(`param_${i}`).value.trim()
+    }));
+
+    for (const x of paramVals) {
+      if (x.p.required && !x.value) {
+        setStatus("resultStatus", `필수 요청인자 "${x.p.name}" 값을 입력하세요.`, "err");
+        return "";
+      }
+    }
+
+    // 마지막 연속 빈 선택 인자는 제거하고, 중간 빈칸은 빈 경로(//)로 자리 보존
+    let last = paramVals.length - 1;
+    while (last >= 0 && !paramVals[last].value && !paramVals[last].p.required) last--;
+
+    const parts = [
+      encodeSegment(baseVals.KEY),
+      encodeSegment(baseVals.TYPE),
+      encodeServicePath(baseVals.SERVICE),
+      encodeSegment(baseVals.START_INDEX),
+      encodeSegment(baseVals.END_INDEX)
+    ];
+
+    for (let i=0;i<=last;i++) {
+      const val = paramVals[i].value;
+      parts.push(val ? encodeSegment(val) : "");
+    }
+
+    const prefix = state.prefixSegments.length
+      ? "/" + state.prefixSegments.map(encodeSegment).join("/")
+      : "";
+    const url = state.protocolHost.replace(/\/+$/,"") + prefix + "/" + parts.join("/");
+    $("resultUrl").value = url;
+    $("resultCard").classList.remove("hidden");
+    setStatus("resultStatus", "URL을 생성했습니다.", "ok");
+    return url;
+  }
+
+  function nowText() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2,"0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  $("analyzeBtn").addEventListener("click", analyze);
+  $("buildBtn").addEventListener("click", buildUrl);
+
+  $("toggleKeyBtn").addEventListener("click", () => {
+    const el = $("base_KEY");
+    el.type = el.type === "password" ? "text" : "password";
+  });
+
+  $("fillNowBtn").addEventListener("click", () => {
+    const idx = state.params.findIndex(p => norm(p.name) === norm("searchDt"));
+    if (idx >= 0) {
+      $(`param_${idx}`).value = nowText();
+      buildUrl();
+    }
+  });
+
+  $("copyBtn").addEventListener("click", async () => {
+    const url = $("resultUrl").value || buildUrl();
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setStatus("resultStatus", "URL을 복사했습니다.", "ok");
+    } catch {
+      $("resultUrl").focus();
+      $("resultUrl").select();
+      document.execCommand("copy");
+      setStatus("resultStatus", "URL을 복사했습니다.", "ok");
+    }
+  });
+
+  function decodeRepeated(value, maxTimes = 3) {
+    let result = String(value ?? "");
+    for (let i = 0; i < maxTimes; i++) {
+      try {
+        const decoded = decodeURIComponent(result);
+        if (decoded === result) break;
+        result = decoded;
+      } catch {
+        break;
+      }
+    }
+    return result;
+  }
+
+  function filenameTimestamp() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, "0");
+    return (
+      String(d.getFullYear()).slice(-2) +
+      pad(d.getMonth() + 1) +
+      pad(d.getDate()) +
+      pad(d.getHours()) +
+      pad(d.getMinutes()) +
+      pad(d.getSeconds())
+    );
+  }
+
+  function urlToWindowsFilename(url) {
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error("파일명으로 변환할 URL 형식이 올바르지 않습니다.");
+    }
+
+    const pathParts = parsed.pathname
+      .split("/")
+      .filter(part => part !== "")
+      .map(part => decodeRepeated(part));
+
+    const jsonIndex = pathParts.findIndex(
+      part => String(part).toLowerCase() === "json"
+    );
+
+    if (jsonIndex > 0) {
+      pathParts[jsonIndex - 1] = "apiKey";
+    }
+
+    let base = [decodeRepeated(parsed.host), ...pathParts].join("_");
+
+    base = base.replace(/[<>:"/\\|?*\s]+/g, "_");
+    base = base.replace(/_+/g, "_").replace(/[ .]+$/g, "");
+
+    return `${base}_${filenameTimestamp()}.json`;
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      const temp = document.createElement("textarea");
+      temp.value = text;
+      temp.style.position = "fixed";
+      temp.style.opacity = "0";
+      document.body.appendChild(temp);
+      temp.focus();
+      temp.select();
+
+      let copied = false;
+      try {
+        copied = document.execCommand("copy");
+      } finally {
+        temp.remove();
+      }
+      return copied;
+    }
+  }
+
+  $("openBtn").addEventListener("click", async () => {
+    const url = $("resultUrl").value || buildUrl();
+    if (!url) return;
+
+    window.open(url, "_blank", "noopener,noreferrer");
+
+    try {
+      const filename = urlToWindowsFilename(url);
+      const copied = await copyText(filename);
+
+      if (copied) {
+        setStatus(
+          "resultStatus",
+          `새 탭에서 요청했습니다. 저장용 파일명을 클립보드에 복사했습니다: ${filename}`,
+          "ok"
+        );
+      } else {
+        setStatus(
+          "resultStatus",
+          `새 탭에서 요청했지만 파일명을 클립보드에 복사하지 못했습니다: ${filename}`,
+          "err"
+        );
+      }
+    } catch (e) {
+      setStatus(
+        "resultStatus",
+        `새 탭에서 요청했지만 파일명 변환에 실패했습니다: ${e.message || e}`,
+        "err"
+      );
+    }
+  });
+
+  $("clearSourceBtn").addEventListener("click", () => {
+    $("sampleUrl").value = "";
+    $("tableHtml").value = "";
+    $("formCard").classList.add("hidden");
+    $("resultCard").classList.add("hidden");
+    setStatus("analyzeStatus","");
+  });
+})();
+</script>
+</body>
+</html>

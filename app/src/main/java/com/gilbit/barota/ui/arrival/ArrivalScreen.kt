@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -305,6 +307,13 @@ private fun ArrivalCard(
                     fontWeight = FontWeight.ExtraBold,
                     color = contentColor,
                 )
+            } else {
+                Text(
+                    "목적지 정차 여부 확인 중",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = contentColor,
+                )
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -319,6 +328,21 @@ private fun ArrivalCard(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        "열차번호",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = contentColor,
+                    )
+                    Text(
+                        arrival.trainNumber.ifBlank { "확인 불가" },
+                        modifier = Modifier.testTag("arrival-train-number"),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = contentColor,
+                    )
+                }
             }
             Text(
                 arrival.arrivalMessage,
@@ -327,14 +351,21 @@ private fun ArrivalCard(
                 color = contentColor,
             )
             if (arrival.currentLocation.isNotBlank()) {
-                Text(arrival.currentLocation, color = contentColor)
+                Text(
+                    "현재 위치 · ${arrival.currentLocation}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = contentColor,
+                )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 if (arrival.terminalStation.isNotBlank()) {
-                    AssistChip(onClick = {}, label = { Text("${arrival.terminalStation}행") })
+                    AssistChip(onClick = {}, label = { Text("행선지 ${arrival.terminalStation}행") })
                 }
-                if (arrival.trainType.isNotBlank() && arrival.trainType != "일반") {
-                    AssistChip(onClick = {}, label = { Text(arrival.trainType) })
+                if (arrival.trainType.isNotBlank()) {
+                    AssistChip(onClick = {}, label = { Text("열차 종류 ${arrival.trainType}") })
                 }
                 if (arrival.isLastTrain) {
                     AssistChip(onClick = {}, label = { Text("막차") })

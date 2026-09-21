@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>범용 JSON 테이블 뷰어</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f7fb;
+      color: #1f2937;
+    }
+    header {
+      padding: 20px 28px;
+      background: #111827;
+      color: white;
+    }
+    header h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+    }
+    header p {
+      margin: 0;
+      color: #cbd5e1;
+      font-size: 14px;
+    }
+    main {
+      padding: 20px 28px 32px;
+    }
+    .panel {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    input[type="file"], select {
+      max-width: 360px;
+    }
+    select {
+      min-width: 280px;
+      padding: 8px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: white;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 9px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      background: #2563eb;
+      color: white;
+    }
+    button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
+    textarea {
+      width: 100%;
+      min-height: 170px;
+      resize: vertical;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .status {
+      margin-top: 10px;
+      font-size: 14px;
+      color: #4b5563;
+    }
+    .status.error {
+      color: #dc2626;
+      font-weight: 700;
+    }
+    .summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .card {
+      min-width: 160px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+    }
+    .card .label {
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .card .value {
+      font-size: 16px;
+      font-weight: 800;
+      word-break: break-all;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+    }
+    .meta-item {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #f8fafc;
+    }
+    .meta-key {
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .meta-value {
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .pagination-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .pagination-left,
+    .pagination-right {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .pagination-bar select {
+      min-width: 90px;
+      padding: 7px 9px;
+    }
+    .page-info {
+      font-size: 13px;
+      color: #4b5563;
+      font-variant-numeric: tabular-nums;
+    }
+    .pagination-bar button:disabled {
+      cursor: not-allowed;
+      opacity: .45;
+    }
+    .table-wrap {
+      overflow: auto;
+      max-height: 70vh;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+    }
+    table {
+      width: max-content;
+      min-width: 100%;
+      border-collapse: collapse;
+      background: white;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #e5e7eb;
+      border-right: 1px solid #f1f5f9;
+      text-align: left;
+      white-space: nowrap;
+      vertical-align: top;
+    }
+    td {
+      max-width: 520px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #f8fafc;
+      font-weight: 800;
+      cursor: pointer;
+      user-select: none;
+    }
+    th:hover {
+      background: #eef2ff;
+    }
+    th.sort-asc::after {
+      content: " ▲";
+      font-size: 11px;
+      color: #2563eb;
+    }
+    th.sort-desc::after {
+      content: " ▼";
+      font-size: 11px;
+      color: #2563eb;
+    }
+    tr:hover td {
+      background: #f8fbff;
+    }
+    .empty {
+      padding: 28px;
+      text-align: center;
+      color: #6b7280;
+    }
+    .section-title {
+      margin: 0 0 12px;
+      font-size: 16px;
+    }
+    details {
+      margin-top: 12px;
+    }
+    pre {
+      overflow: auto;
+      max-height: 380px;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 12px;
+    }
+    .path {
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      color: #1d4ed8;
+      margin-bottom: 10px;
+    }
+    .url-grid {
+      display: grid;
+      grid-template-columns: 110px minmax(180px, 1fr);
+      gap: 10px 12px;
+      align-items: center;
+    }
+    .url-grid label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #374151;
+    }
+    .url-grid input,
+    .url-grid select {
+      width: 100%;
+      max-width: none;
+      padding: 9px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: white;
+      font: inherit;
+    }
+    .url-output {
+      width: 100%;
+      min-height: 76px;
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #f8fafc;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
+    .hint {
+      margin-top: 8px;
+      color: #64748b;
+      font-size: 12px;
+    }
+    .converter-row {
+      display: grid;
+      grid-template-columns: 110px minmax(0, 1fr);
+      gap: 10px 12px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .converter-row label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #374151;
+    }
+    .converter-row input {
+      width: 100%;
+      padding: 9px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font: inherit;
+    }
+    .filename-output {
+      width: 100%;
+      min-height: 54px;
+      padding: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #f8fafc;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>범용 JSON 테이블 뷰어</h1>
+    <p>JSON 내부의 객체 배열을 자동으로 찾아 표로 표시합니다.</p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="controls">
+        <input id="fileInput" type="file" accept=".json,application/json" />
+        <button id="renderBtn">JSON 분석</button>
+        <button id="clearBtn" class="secondary">초기화</button>
+      </div>
+
+      <textarea id="jsonInput" placeholder="여기에 JSON 전체 내용을 붙여넣거나 JSON 파일을 선택하세요."></textarea>
+      <div id="status" class="status">JSON을 입력해주세요.</div>
+    </section>
+
+
+
+    <section class="panel">
+      <h2 class="section-title">URL → Windows 파일명 변환</h2>
+
+      <div class="converter-row">
+        <label for="urlToFilenameInput">요청 URL</label>
+        <input
+          id="urlToFilenameInput"
+          type="text"
+          placeholder="예: http://openapi.seoul.go.kr:8088/실제키/json/getTrainSch/1/100/..."
+        />
+      </div>
+
+      <div id="filenameOutput" class="filename-output">
+        URL을 입력한 뒤 변환 버튼을 누르세요.
+      </div>
+
+      <div class="controls" style="margin-top: 10px; margin-bottom: 0;">
+        <button id="convertFilenameBtn">파일명으로 변환</button>
+        <button id="copyFilenameBtn" class="secondary">파일명 복사</button>
+      </div>
+
+      <div class="hint">
+        <code>json</code> 바로 앞 경로는 <code>apiKey</code>로 치환하며,
+        Windows에서 사용할 수 없는 문자는 <code>_</code>로 바꾸고
+        마지막에 <code>YYMMDDhhmmss</code> 시각을 붙입니다.
+      </div>
+    </section>
+
+    <section id="urlPanel" class="panel" hidden>
+      <h2 class="section-title">파일명에서 요청 URL 복구</h2>
+
+      <div class="url-grid">
+        <label for="protocolSelect">프로토콜</label>
+        <select id="protocolSelect">
+          <option value="http">http</option>
+          <option value="https">https</option>
+        </select>
+
+        <label for="sourceFilename">파일명</label>
+        <input id="sourceFilename" type="text" readonly />
+
+        <label for="apiKeyInput">API Key</label>
+        <input id="apiKeyInput" type="text" placeholder="실제 API Key를 입력하세요" />
+      </div>
+
+      <div id="reconstructedUrl" class="url-output">파일을 선택하면 URL이 표시됩니다.</div>
+
+      <div class="controls" style="margin-top: 10px; margin-bottom: 0;">
+        <button id="copyUrlBtn">URL 복사</button>
+        <button id="openUrlBtn" class="secondary">URL 열기</button>
+      </div>
+
+      <div class="hint">
+        파일명의 <code>apiKey</code>는 위 입력값으로 치환하고,
+        마지막 12자리 생성 시각(YYMMDDhhmmss)은 요청 URL에서 제외합니다.
+      </div>
+    </section>
+
+    <section id="arraySelectorPanel" class="panel" hidden>
+      <h2 class="section-title">표로 표시할 배열</h2>
+      <div class="controls">
+        <select id="arraySelector"></select>
+      </div>
+      <div id="selectedPath" class="path"></div>
+    </section>
+
+    <section id="summaryPanel" class="panel" hidden>
+      <div class="summary">
+        <div class="card">
+          <div class="label">행 수</div>
+          <div id="rowCount" class="value">0</div>
+        </div>
+        <div class="card">
+          <div class="label">컬럼 수</div>
+          <div id="columnCount" class="value">0</div>
+        </div>
+        <div class="card">
+          <div class="label">탐지된 객체 배열</div>
+          <div id="arrayCount" class="value">0</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="metaPanel" class="panel" hidden>
+      <h2 class="section-title">상위 메타데이터</h2>
+      <div id="metaGrid" class="meta-grid"></div>
+    </section>
+
+    <section class="panel">
+      <div id="paginationPanel" class="pagination-bar" hidden>
+        <div class="pagination-left">
+          <label for="pageSizeSelect">페이지당</label>
+          <select id="pageSizeSelect">
+            <option value="100">100행</option>
+            <option value="200" selected>200행</option>
+            <option value="500">500행</option>
+            <option value="1000">1000행</option>
+          </select>
+          <span id="pageInfo" class="page-info"></span>
+        </div>
+        <div class="pagination-right">
+          <button id="firstPageBtn" class="secondary">처음</button>
+          <button id="prevPageBtn" class="secondary">이전</button>
+          <button id="nextPageBtn" class="secondary">다음</button>
+          <button id="lastPageBtn" class="secondary">마지막</button>
+        </div>
+      </div>
+
+      <div id="tableContainer" class="empty">표시할 데이터가 없습니다.</div>
+
+      <details id="rawDetails" hidden>
+        <summary>원본 JSON 보기</summary>
+        <pre id="rawJson"></pre>
+      </details>
+    </section>
+  </main>
+
+  <script>
+    const fileInput = document.getElementById("fileInput");
+    const jsonInput = document.getElementById("jsonInput");
+    const renderBtn = document.getElementById("renderBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const statusEl = document.getElementById("status");
+    const tableContainer = document.getElementById("tableContainer");
+    const summaryPanel = document.getElementById("summaryPanel");
+    const metaPanel = document.getElementById("metaPanel");
+    const metaGrid = document.getElementById("metaGrid");
+    const rawDetails = document.getElementById("rawDetails");
+    const rawJson = document.getElementById("rawJson");
+    const arraySelectorPanel = document.getElementById("arraySelectorPanel");
+    const arraySelector = document.getElementById("arraySelector");
+    const selectedPath = document.getElementById("selectedPath");
+    const urlPanel = document.getElementById("urlPanel");
+    const protocolSelect = document.getElementById("protocolSelect");
+    const sourceFilename = document.getElementById("sourceFilename");
+    const apiKeyInput = document.getElementById("apiKeyInput");
+    const reconstructedUrl = document.getElementById("reconstructedUrl");
+    const copyUrlBtn = document.getElementById("copyUrlBtn");
+    const openUrlBtn = document.getElementById("openUrlBtn");
+
+    const urlToFilenameInput = document.getElementById("urlToFilenameInput");
+    const filenameOutput = document.getElementById("filenameOutput");
+    const convertFilenameBtn = document.getElementById("convertFilenameBtn");
+    const copyFilenameBtn = document.getElementById("copyFilenameBtn");
+
+    const paginationPanel = document.getElementById("paginationPanel");
+    const pageSizeSelect = document.getElementById("pageSizeSelect");
+    const pageInfo = document.getElementById("pageInfo");
+    const firstPageBtn = document.getElementById("firstPageBtn");
+    const prevPageBtn = document.getElementById("prevPageBtn");
+    const nextPageBtn = document.getElementById("nextPageBtn");
+    const lastPageBtn = document.getElementById("lastPageBtn");
+
+    let parsedData = null;
+    let discoveredArrays = [];
+
+    let currentTableItems = [];
+    let currentColumns = [];
+    let currentPage = 1;
+    let pageSize = 200;
+    let currentSort = { column: null, direction: "asc" };
+    let rawJsonRendered = false;
+
+    fileInput.addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        jsonInput.value = text;
+        analyzeJson(text);
+        setupUrlReconstruction(file.name);
+      } catch (e) {
+        setStatus("파일을 읽는 중 오류가 발생했습니다: " + e.message, true);
+      }
+    });
+
+    renderBtn.addEventListener("click", () => analyzeJson(jsonInput.value));
+
+    clearBtn.addEventListener("click", () => {
+      fileInput.value = "";
+      jsonInput.value = "";
+      parsedData = null;
+      discoveredArrays = [];
+      summaryPanel.hidden = true;
+      metaPanel.hidden = true;
+      arraySelectorPanel.hidden = true;
+      rawDetails.hidden = true;
+      rawDetails.open = false;
+      rawJson.textContent = "";
+      rawJsonRendered = false;
+      paginationPanel.hidden = true;
+      currentTableItems = [];
+      currentColumns = [];
+      currentPage = 1;
+      currentSort = { column: null, direction: "asc" };
+      urlPanel.hidden = true;
+      sourceFilename.value = "";
+      apiKeyInput.value = "";
+      reconstructedUrl.textContent = "파일을 선택하면 URL이 표시됩니다.";
+      tableContainer.className = "empty";
+      tableContainer.innerHTML = "표시할 데이터가 없습니다.";
+      setStatus("JSON을 입력해주세요.");
+    });
+
+    arraySelector.addEventListener("change", () => {
+      const index = Number(arraySelector.value);
+      renderSelectedArray(index);
+    });
+
+
+
+    convertFilenameBtn.addEventListener("click", () => {
+      const url = urlToFilenameInput.value.trim();
+
+      if (!url) {
+        filenameOutput.textContent = "URL이 입력되지 않았습니다.";
+        filenameOutput.dataset.filename = "";
+        return;
+      }
+
+      try {
+        const filename = urlToWindowsFilename(url);
+        filenameOutput.textContent = filename;
+        filenameOutput.dataset.filename = filename;
+      } catch (e) {
+        filenameOutput.textContent = "URL 형식을 확인해주세요.";
+        filenameOutput.dataset.filename = "";
+      }
+    });
+
+    urlToFilenameInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        convertFilenameBtn.click();
+      }
+    });
+
+    copyFilenameBtn.addEventListener("click", async () => {
+      const filename = filenameOutput.dataset.filename || "";
+      if (!filename) return;
+
+      try {
+        await navigator.clipboard.writeText(filename);
+        const original = copyFilenameBtn.textContent;
+        copyFilenameBtn.textContent = "복사됨";
+        setTimeout(() => {
+          copyFilenameBtn.textContent = original;
+        }, 1200);
+      } catch {
+        alert("클립보드 복사에 실패했습니다.");
+      }
+    });
+
+    function safeDecode(value) {
+      let decoded = value;
+
+      // 일반 URL 인코딩 + 이중 인코딩까지 어느 정도 대응
+      for (let i = 0; i < 3; i++) {
+        try {
+          const next = decodeURIComponent(decoded);
+
+          if (next === decoded) {
+            break;
+          }
+
+          decoded = next;
+        } catch {
+          break;
+        }
+      }
+
+      return decoded;
+    }
+
+    function urlToWindowsFilename(rawUrl) {
+      // URL 객체에는 원본 URL을 넣고,
+      // pathname의 각 경로 조각을 별도로 디코딩한다.
+      const parsed = new URL(rawUrl.trim());
+
+      const parts = parsed.pathname
+        .split("/")
+        .filter(part => part.length > 0)
+        .map(part => safeDecode(part));
+
+      const jsonIndex = parts.indexOf("json");
+
+      if (jsonIndex > 0) {
+        parts[jsonIndex - 1] = "apiKey";
+      }
+
+      let text =
+        parsed.host +
+        (parts.length ? "_" + parts.join("_") : "");
+
+      // Windows 파일명 금지 문자 → _
+      text = text.replace(/[<>:"/\\|?*]/g, "_");
+
+      // 공백 → _
+      text = text.replace(/\s+/g, "_");
+
+      // Windows에서 문제가 될 수 있는 마지막 공백/마침표 제거
+      text = text.replace(/[ .]+$/g, "");
+
+      const now = new Date();
+
+      const yy = String(now.getFullYear()).slice(-2);
+      const MM = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      const hh = String(now.getHours()).padStart(2, "0");
+      const mm = String(now.getMinutes()).padStart(2, "0");
+      const ss = String(now.getSeconds()).padStart(2, "0");
+
+      const timestamp = `${yy}${MM}${dd}${hh}${mm}${ss}`;
+
+      return `${text}_${timestamp}.json`;
+    }
+
+
+    openUrlBtn.addEventListener("click", () => {
+      const url = reconstructedUrl.dataset.url || "";
+
+      if (!url) {
+        alert("열 수 있는 URL이 없습니다.");
+        return;
+      }
+
+      try {
+        const parsed = new URL(url);
+
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+          throw new Error("지원하지 않는 프로토콜");
+        }
+
+        window.open(url, "_blank", "noopener,noreferrer");
+      } catch {
+        alert("URL 형식을 확인해주세요.");
+      }
+    });
+
+    apiKeyInput.addEventListener("input", updateReconstructedUrl);
+    protocolSelect.addEventListener("change", updateReconstructedUrl);
+
+    copyUrlBtn.addEventListener("click", async () => {
+      const url = reconstructedUrl.dataset.url || "";
+      if (!url) return;
+
+      try {
+        await navigator.clipboard.writeText(url);
+        const original = copyUrlBtn.textContent;
+        copyUrlBtn.textContent = "복사됨";
+        setTimeout(() => {
+          copyUrlBtn.textContent = original;
+        }, 1200);
+      } catch {
+        alert("클립보드 복사에 실패했습니다.");
+      }
+    });
+
+    function setupUrlReconstruction(filename) {
+      sourceFilename.value = filename;
+      urlPanel.hidden = false;
+
+      const parsed = parseRequestFilename(filename);
+
+      if (!parsed) {
+        reconstructedUrl.textContent =
+          "파일명에서 요청 URL 구조를 인식하지 못했습니다.";
+        reconstructedUrl.dataset.url = "";
+        return;
+      }
+
+      protocolSelect.value = parsed.protocol;
+      reconstructedUrl.dataset.filenameTemplate = JSON.stringify(parsed);
+      updateReconstructedUrl();
+    }
+
+    function parseRequestFilename(filename) {
+      let base = filename.replace(/\.json$/i, "");
+
+      // 파일 생성 시 붙인 YYMMDDhhmmss(12자리) 제거
+      base = base.replace(/_\d{12}$/, "");
+
+      const parts = base.split("_");
+      if (parts.length < 2) return null;
+
+      const host = parts.shift();
+      if (!host.includes(".")) return null;
+
+      let port = "";
+      if (parts[0] && /^\d{2,5}$/.test(parts[0])) {
+        port = parts.shift();
+      }
+
+      // 서울 열린데이터광장 API의 일반적인 엔드포인트에 맞춘 기본값.
+      // 사용자가 드롭다운에서 https로 바꿀 수 있음.
+      const protocol = "http";
+
+      return {
+        host,
+        port,
+        segments: parts,
+        protocol
+      };
+    }
+
+    function updateReconstructedUrl() {
+      const rawTemplate = reconstructedUrl.dataset.filenameTemplate;
+
+      if (!rawTemplate) return;
+
+      const parsed = JSON.parse(rawTemplate);
+      const apiKey = apiKeyInput.value.trim();
+
+      const encodedSegments = parsed.segments.map(segment => {
+        if (segment === "apiKey") {
+          return apiKey || "apiKey";
+        }
+
+        // 파일명에 실제 공백으로 남아 있던 URL segment는 %20으로 복구
+        if (segment === " ") {
+          return "%20";
+        }
+
+        return encodeURIComponent(segment)
+          .replace(/%2F/gi, "/");
+      });
+
+      const authority =
+        parsed.host + (parsed.port ? `:${parsed.port}` : "");
+
+      const url =
+        `${protocolSelect.value}://${authority}/${encodedSegments.join("/")}`;
+
+      reconstructedUrl.textContent = url;
+      reconstructedUrl.dataset.url = url;
+    }
+
+
+    pageSizeSelect.addEventListener("change", () => {
+      pageSize = Number(pageSizeSelect.value) || 200;
+      currentPage = 1;
+      renderCurrentPage();
+    });
+
+    firstPageBtn.addEventListener("click", () => {
+      currentPage = 1;
+      renderCurrentPage();
+    });
+
+    prevPageBtn.addEventListener("click", () => {
+      currentPage = Math.max(1, currentPage - 1);
+      renderCurrentPage();
+    });
+
+    nextPageBtn.addEventListener("click", () => {
+      currentPage = Math.min(getTotalPages(), currentPage + 1);
+      renderCurrentPage();
+    });
+
+    lastPageBtn.addEventListener("click", () => {
+      currentPage = getTotalPages();
+      renderCurrentPage();
+    });
+
+    rawDetails.addEventListener("toggle", () => {
+      if (!rawDetails.open || rawJsonRendered || parsedData === null) {
+        return;
+      }
+
+      rawJson.textContent = "원본 JSON을 렌더링하는 중...";
+
+      requestAnimationFrame(() => {
+        rawJson.textContent = JSON.stringify(parsedData, null, 2);
+        rawJsonRendered = true;
+      });
+    });
+
+    function setStatus(message, isError = false) {
+      statusEl.textContent = message;
+      statusEl.className = "status" + (isError ? " error" : "");
+    }
+
+    function analyzeJson(text) {
+      if (!text.trim()) {
+        setStatus("JSON 내용이 비어 있습니다.", true);
+        return;
+      }
+
+      try {
+        parsedData = JSON.parse(text);
+      } catch (e) {
+        setStatus("JSON 파싱 실패: " + e.message, true);
+        return;
+      }
+
+      rawJson.textContent = "";
+      rawJsonRendered = false;
+      rawDetails.open = false;
+      rawDetails.hidden = false;
+
+      discoveredArrays = findObjectArrays(parsedData);
+
+      if (discoveredArrays.length === 0) {
+        tableContainer.className = "empty";
+        tableContainer.innerHTML = "객체 배열을 찾지 못했습니다.";
+        summaryPanel.hidden = true;
+        arraySelectorPanel.hidden = true;
+        renderMetadata(parsedData, null);
+        setStatus("JSON은 읽었지만 표로 표시할 객체 배열을 찾지 못했습니다.", true);
+        return;
+      }
+
+      discoveredArrays.sort((a, b) => {
+        if (b.items.length !== a.items.length) {
+          return b.items.length - a.items.length;
+        }
+        return a.path.localeCompare(b.path);
+      });
+
+      arraySelector.innerHTML = "";
+      discoveredArrays.forEach((entry, index) => {
+        const option = document.createElement("option");
+        option.value = index;
+        option.textContent = `${entry.path} (${entry.items.length.toLocaleString()}행)`;
+        arraySelector.appendChild(option);
+      });
+
+      arraySelectorPanel.hidden = discoveredArrays.length <= 1;
+      document.getElementById("arrayCount").textContent = discoveredArrays.length.toLocaleString();
+
+      renderSelectedArray(0);
+      setStatus(`객체 배열 ${discoveredArrays.length.toLocaleString()}개를 찾았습니다.`);
+    }
+
+    function findObjectArrays(value, path = "$", results = []) {
+      if (Array.isArray(value)) {
+        if (value.length === 0) {
+          return results;
+        }
+
+        const isObjectArray = value.every(
+          item => item !== null && typeof item === "object" && !Array.isArray(item)
+        );
+
+        if (isObjectArray) {
+          results.push({
+            path,
+            items: value
+          });
+
+          // 큰 객체 배열 내부를 다시 전부 재귀 순회하지 않는다.
+          return results;
+        }
+
+        value.forEach((item, index) => {
+          if (item && typeof item === "object") {
+            findObjectArrays(item, `${path}[${index}]`, results);
+          }
+        });
+
+        return results;
+      }
+
+      if (value && typeof value === "object") {
+        for (const [key, child] of Object.entries(value)) {
+          const childPath = path === "$" ? `$.${key}` : `${path}.${key}`;
+          findObjectArrays(child, childPath, results);
+        }
+      }
+
+      return results;
+    }
+
+    function renderSelectedArray(index) {
+      const selected = discoveredArrays[index];
+      if (!selected) return;
+
+      selectedPath.textContent = selected.path;
+
+      renderSummary(selected.items);
+      renderMetadata(parsedData, selected.path);
+
+      currentTableItems = [...selected.items];
+      currentColumns = collectColumns(selected.items);
+      currentPage = 1;
+      pageSize = Number(pageSizeSelect.value) || 200;
+      currentSort = { column: null, direction: "asc" };
+
+      paginationPanel.hidden = false;
+      renderCurrentPage();
+    }
+
+    function renderSummary(items) {
+      const columns = collectColumns(items);
+      document.getElementById("rowCount").textContent = items.length.toLocaleString();
+      document.getElementById("columnCount").textContent = columns.length.toLocaleString();
+      summaryPanel.hidden = false;
+    }
+
+    function collectColumns(items) {
+      const set = new Set();
+      items.forEach(item => {
+        if (item && typeof item === "object") {
+          Object.keys(item).forEach(key => set.add(key));
+        }
+      });
+      return [...set];
+    }
+
+    function renderMetadata(root, selectedArrayPath) {
+      const metadata = [];
+
+      function walk(value, path = "$") {
+        if (path === selectedArrayPath) return;
+
+        if (Array.isArray(value)) {
+          metadata.push([path, `[Array ${value.length}]`]);
+          return;
+        }
+
+        if (value && typeof value === "object") {
+          const entries = Object.entries(value);
+
+          if (entries.length === 0) {
+            metadata.push([path, "{}"]);
+            return;
+          }
+
+          for (const [key, child] of entries) {
+            const childPath = path === "$" ? `$.${key}` : `${path}.${key}`;
+
+            if (childPath === selectedArrayPath) continue;
+
+            if (child === null || typeof child !== "object") {
+              metadata.push([childPath, child]);
+            } else if (Array.isArray(child)) {
+              metadata.push([childPath, `[Array ${child.length}]`]);
+            } else {
+              walk(child, childPath);
+            }
+          }
+        } else {
+          metadata.push([path, value]);
+        }
+      }
+
+      walk(root);
+
+      metaGrid.innerHTML = "";
+
+      if (metadata.length === 0) {
+        metaPanel.hidden = true;
+        return;
+      }
+
+      metadata.slice(0, 100).forEach(([key, value]) => {
+        const box = document.createElement("div");
+        box.className = "meta-item";
+
+        const keyEl = document.createElement("div");
+        keyEl.className = "meta-key";
+        keyEl.textContent = key;
+
+        const valueEl = document.createElement("div");
+        valueEl.className = "meta-value";
+        valueEl.textContent =
+          typeof value === "string" ? value : JSON.stringify(value);
+
+        box.appendChild(keyEl);
+        box.appendChild(valueEl);
+        metaGrid.appendChild(box);
+      });
+
+      metaPanel.hidden = false;
+    }
+
+    function compareValues(a, b) {
+      if (a === "" && b === "") return 0;
+      if (a === "") return 1;
+      if (b === "") return -1;
+
+      const numberPattern = /^-?\d+(\.\d+)?$/;
+      if (numberPattern.test(a) && numberPattern.test(b)) {
+        return Number(a) - Number(b);
+      }
+
+      const timePattern = /^\d{1,2}:\d{2}(:\d{2})?$/;
+      if (timePattern.test(a) && timePattern.test(b)) {
+        const toSeconds = (value) => {
+          const [h, m, s = "0"] = value.split(":").map(Number);
+          return h * 3600 + m * 60 + s;
+        };
+        return toSeconds(a) - toSeconds(b);
+      }
+
+      const isoLike = /[-T:]/;
+      const dateA = Date.parse(a);
+      const dateB = Date.parse(b);
+
+      if (
+        isoLike.test(a) &&
+        isoLike.test(b) &&
+        !Number.isNaN(dateA) &&
+        !Number.isNaN(dateB)
+      ) {
+        return dateA - dateB;
+      }
+
+      return a.localeCompare(b, "ko", {
+        numeric: true,
+        sensitivity: "base"
+      });
+    }
+
+    function getTotalPages() {
+      return Math.max(1, Math.ceil(currentTableItems.length / pageSize));
+    }
+
+    function normalizeSortValue(value) {
+      if (value === null || value === undefined) return "";
+      if (typeof value === "object") return JSON.stringify(value);
+      return String(value);
+    }
+
+    function sortCurrentTable(column) {
+      const nextDirection =
+        currentSort.column === column && currentSort.direction === "asc"
+          ? "desc"
+          : "asc";
+
+      currentSort = { column, direction: nextDirection };
+
+      currentTableItems.sort((a, b) => {
+        const aText = normalizeSortValue(a?.[column]);
+        const bText = normalizeSortValue(b?.[column]);
+        const result = compareValues(aText, bText);
+
+        return nextDirection === "asc" ? result : -result;
+      });
+
+      currentPage = 1;
+      renderCurrentPage();
+    }
+
+    function updatePaginationUi() {
+      const totalItems = currentTableItems.length;
+      const totalPages = getTotalPages();
+
+      if (currentPage > totalPages) {
+        currentPage = totalPages;
+      }
+
+      const start = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+      const end = Math.min(currentPage * pageSize, totalItems);
+
+      pageInfo.textContent =
+        `${start.toLocaleString()}–${end.toLocaleString()} / ` +
+        `${totalItems.toLocaleString()}행 · ${currentPage.toLocaleString()} / ` +
+        `${totalPages.toLocaleString()} 페이지`;
+
+      firstPageBtn.disabled = currentPage <= 1;
+      prevPageBtn.disabled = currentPage <= 1;
+      nextPageBtn.disabled = currentPage >= totalPages;
+      lastPageBtn.disabled = currentPage >= totalPages;
+    }
+
+    function renderCurrentPage() {
+      if (!currentTableItems.length) {
+        paginationPanel.hidden = true;
+        tableContainer.className = "empty";
+        tableContainer.innerHTML = "배열이 비어 있습니다.";
+        return;
+      }
+
+      updatePaginationUi();
+
+      const startIndex = (currentPage - 1) * pageSize;
+      const pageItems = currentTableItems.slice(
+        startIndex,
+        startIndex + pageSize
+      );
+
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const tbody = document.createElement("tbody");
+      const headRow = document.createElement("tr");
+
+      currentColumns.forEach(col => {
+        const th = document.createElement("th");
+        th.textContent = col;
+        th.title = "클릭하여 전체 데이터 정렬";
+
+        if (currentSort.column === col) {
+          th.classList.add(
+            currentSort.direction === "asc" ? "sort-asc" : "sort-desc"
+          );
+        }
+
+        th.addEventListener("click", () => sortCurrentTable(col));
+        headRow.appendChild(th);
+      });
+
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+
+      const fragment = document.createDocumentFragment();
+
+      pageItems.forEach(item => {
+        const tr = document.createElement("tr");
+
+        currentColumns.forEach(col => {
+          const td = document.createElement("td");
+          td.textContent = normalizeSortValue(item?.[col]);
+          tr.appendChild(td);
+        });
+
+        fragment.appendChild(tr);
+      });
+
+      tbody.appendChild(fragment);
+      table.appendChild(tbody);
+
+      tableContainer.className = "table-wrap";
+      tableContainer.replaceChildren(table);
+    }
+  </script>
+</body>
+</html>

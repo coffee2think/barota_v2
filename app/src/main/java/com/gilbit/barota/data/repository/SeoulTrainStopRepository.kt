@@ -5,6 +5,7 @@ import com.gilbit.barota.data.model.DestinationStopDiagnostic
 import com.gilbit.barota.data.model.DestinationStopReason
 import com.gilbit.barota.data.model.DestinationStopStatus
 import com.gilbit.barota.data.model.TrainArrival
+import com.gilbit.barota.data.model.TrainNumberMappingKey
 import com.gilbit.barota.data.remote.TimetableApi
 import com.gilbit.barota.data.remote.TrainScheduleItem
 import java.time.DayOfWeek
@@ -21,19 +22,22 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 class SeoulTrainStopRepository private constructor(
     private val api: TimetableApi,
     private val apiKey: String,
+    private val mappingStore: TrainNumberMappingStore,
     private val nowProvider: () -> LocalDateTime,
 ) : TrainStopRepository {
     @Inject
     constructor(
         api: TimetableApi,
         @Named("timetableApiKey") apiKey: String,
-    ) : this(api, apiKey, { LocalDateTime.now(SEOUL_ZONE) })
+        mappingStore: TrainNumberMappingStore,
+    ) : this(api, apiKey, mappingStore, { LocalDateTime.now(SEOUL_ZONE) })
 
     internal constructor(
         api: TimetableApi,
         apiKey: String,
+        mappingStore: TrainNumberMappingStore,
         now: LocalDateTime,
-    ) : this(api, apiKey, { now })
+    ) : this(api, apiKey, mappingStore, { now })
 
     override suspend fun getDestinationStopDecision(
         arrival: TrainArrival,
@@ -58,37 +62,28 @@ class SeoulTrainStopRepository private constructor(
             return decision(DestinationStopStatus.UNKNOWN, DestinationStopReason.UNSUPPORTED_LINE)
         }
 
-        val attemptedTrainNumbers = mutableListOf<String>()
-        var resolvedTrainNumber: String? = null
-        var originSchedules: List<TrainScheduleItem> = emptyList()
-        for (candidate in listOf("K$normalizedTrainNumber", "S$normalizedTrainNumber")) {
-            attemptedTrainNumbers += candidate
-            val rows = getScheduleRows(arrival, originName, candidate)
-            val matches = rows.findTrainAt(candidate, originName)
-            if (matches.isNotEmpty()) {
-                resolvedTrainNumber = candidate
-                originSchedules = matches
-                break
-            }
-        }
-        if (resolvedTrainNumber == null) {
+        val resolution = resolveTimetableTrainNumber(
+            arrival = arrival,
+            originName = originName,
+            normalizedRealtimeTrainNumber = normalizedTrainNumber,
+        )
+        if (resolution == null) {
             return DestinationStopDecision(
                 status = DestinationStopStatus.UNKNOWN,
                 diagnostic = DestinationStopDiagnostic(
                     reason = DestinationStopReason.TIMETABLE_TRAIN_NUMBER_NOT_FOUND,
                     originScheduleMatchCount = 0,
-                    attemptedTimetableTrainNumbers = attemptedTrainNumbers,
                 ),
             )
         }
 
-        val destinationRows = getScheduleRows(arrival, destinationName, resolvedTrainNumber)
-        val destinationSchedules = destinationRows.findTrainAt(resolvedTrainNumber, destinationName)
+        val destinationRows = getScheduleRows(arrival, destinationName, resolution.timetableTrainNumber)
+        val destinationSchedules = destinationRows.findTrainAt(resolution.timetableTrainNumber, destinationName)
         val diagnosticCounts = DestinationStopDiagnostic(
-            originScheduleMatchCount = originSchedules.size,
+            originScheduleMatchCount = resolution.originSchedules.size,
             destinationScheduleMatchCount = destinationSchedules.size,
-            attemptedTimetableTrainNumbers = attemptedTrainNumbers,
-            resolvedTimetableTrainNumber = resolvedTrainNumber,
+            attemptedTimetableTrainNumbers = resolution.attemptedTrainNumbers,
+            resolvedTimetableTrainNumber = resolution.timetableTrainNumber,
         )
         if (destinationSchedules.isEmpty()) {
             return DestinationStopDecision(
@@ -98,14 +93,14 @@ class SeoulTrainStopRepository private constructor(
         }
 
         // 같은 열차가 목적지역에 있었더라도 이미 출발역을 지나온 경로라면 승차 후에는 도달하지 않는다.
-        val hasFutureStop = originSchedules.any { origin ->
+        val hasFutureStop = resolution.originSchedules.any { origin ->
             val originTime = origin.departureTimeSeconds() ?: return@any false
             destinationSchedules.any { destination ->
                 val destinationTime = destination.arrivalTimeSeconds() ?: return@any false
                 destinationTime > originTime
             }
         }
-        val hasComparableTimes = originSchedules.any { it.departureTimeSeconds() != null } &&
+        val hasComparableTimes = resolution.originSchedules.any { it.departureTimeSeconds() != null } &&
             destinationSchedules.any { it.arrivalTimeSeconds() != null }
         return when {
             hasFutureStop -> DestinationStopDecision(
@@ -123,12 +118,39 @@ class SeoulTrainStopRepository private constructor(
         }
     }
 
+    private suspend fun resolveTimetableTrainNumber(
+        arrival: TrainArrival,
+        originName: String,
+        normalizedRealtimeTrainNumber: String,
+    ): ResolvedTrainNumber? {
+        val now = nowProvider()
+        val key = TrainNumberMappingKey(
+            timetableLineName = checkNotNull(arrival.timetableLineName),
+            realtimeTrainNumber = normalizedRealtimeTrainNumber,
+            direction = arrival.direction.trim(),
+            terminalStation = arrival.terminalStation.normalizeTerminalName(),
+            trainType = arrival.trainType.trim(),
+            dayType = now.dayType(),
+        )
+        val timetableTrainNumber = mappingStore.find(key) ?: return null
+        val originSchedules = getScheduleRows(arrival, originName, timetableTrainNumber)
+            .findTrainAt(timetableTrainNumber, originName)
+        if (originSchedules.isEmpty()) return null
+        return ResolvedTrainNumber(
+            timetableTrainNumber = timetableTrainNumber,
+            originSchedules = originSchedules,
+            attemptedTrainNumbers = listOf(timetableTrainNumber),
+        )
+    }
+
     private suspend fun getScheduleRows(
         arrival: TrainArrival,
         stationName: String,
         timetableTrainNumber: String,
     ): List<TrainScheduleItem> {
-        val response = api.getTrainSchedule(buildUrl(arrival, stationName, timetableTrainNumber)).response
+        val response = api.getTrainSchedule(
+            buildUrl(arrival, stationName, timetableTrainNumber),
+        ).response
             ?: throw SeoulApiException("열차시간표 API 응답 형식을 확인할 수 없습니다.")
         if (response.header.resultCode != "00") {
             throw SeoulApiException(
@@ -144,10 +166,7 @@ class SeoulTrainStopRepository private constructor(
         timetableTrainNumber: String,
     ): HttpUrl {
         val now = nowProvider()
-        val dayType = when (now.dayOfWeek) {
-            DayOfWeek.SATURDAY, DayOfWeek.SUNDAY -> "주말"
-            else -> "평일"
-        }
+        val dayType = now.dayType()
         val pathSegments = listOf(
             apiKey,
             "json",
@@ -180,6 +199,12 @@ class SeoulTrainStopRepository private constructor(
         val SEARCH_DATE_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     }
 }
+
+private data class ResolvedTrainNumber(
+    val timetableTrainNumber: String,
+    val originSchedules: List<TrainScheduleItem>,
+    val attemptedTrainNumbers: List<String>,
+)
 
 private fun decision(
     status: DestinationStopStatus,
@@ -221,7 +246,18 @@ private fun String?.toServiceDaySeconds(): Int? {
 
 private val TIME_AT_END = Regex("(\\d{1,2}):(\\d{2}):(\\d{2})$")
 
+private fun LocalDateTime.dayType(): String = when (dayOfWeek) {
+    DayOfWeek.SATURDAY, DayOfWeek.SUNDAY -> "주말"
+    else -> "평일"
+}
+
 private fun String.sameStation(other: String): Boolean =
     normalizeStationName() == other.normalizeStationName()
 
 private fun String.normalizeStationName(): String = trim().removeSuffix("역").replace(" ", "")
+
+private fun String.normalizeTerminalName(): String = normalizeStationName()
+    .replace(TERMINAL_QUALIFIER, "")
+    .removeSuffix("행")
+
+private val TERMINAL_QUALIFIER = Regex("\\([^)]*\\)")

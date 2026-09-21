@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>범용 JSON 테이블 뷰어</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f7fb;
+      color: #1f2937;
+    }
+    header {
+      padding: 20px 28px;
+      background: #111827;
+      color: white;
+    }
+    header h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+    }
+    header p {
+      margin: 0;
+      color: #cbd5e1;
+      font-size: 14px;
+    }
+    main {
+      padding: 20px 28px 32px;
+    }
+    .panel {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    input[type="file"], select {
+      max-width: 360px;
+    }
+    select {
+      min-width: 280px;
+      padding: 8px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: white;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 9px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      background: #2563eb;
+      color: white;
+    }
+    button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
+    textarea {
+      width: 100%;
+      min-height: 170px;
+      resize: vertical;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .status {
+      margin-top: 10px;
+      font-size: 14px;
+      color: #4b5563;
+    }
+    .status.error {
+      color: #dc2626;
+      font-weight: 700;
+    }
+    .summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .card {
+      min-width: 160px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+    }
+    .card .label {
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .card .value {
+      font-size: 16px;
+      font-weight: 800;
+      word-break: break-all;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+    }
+    .meta-item {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #f8fafc;
+    }
+    .meta-key {
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .meta-value {
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .table-wrap {
+      overflow: auto;
+      max-height: 70vh;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+    }
+    table {
+      width: max-content;
+      min-width: 100%;
+      border-collapse: collapse;
+      background: white;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #e5e7eb;
+      border-right: 1px solid #f1f5f9;
+      text-align: left;
+      white-space: nowrap;
+      vertical-align: top;
+    }
+    td {
+      max-width: 520px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #f8fafc;
+      font-weight: 800;
+      cursor: pointer;
+      user-select: none;
+    }
+    th:hover {
+      background: #eef2ff;
+    }
+    th.sort-asc::after {
+      content: " ▲";
+      font-size: 11px;
+      color: #2563eb;
+    }
+    th.sort-desc::after {
+      content: " ▼";
+      font-size: 11px;
+      color: #2563eb;
+    }
+    tr:hover td {
+      background: #f8fbff;
+    }
+    .empty {
+      padding: 28px;
+      text-align: center;
+      color: #6b7280;
+    }
+    .section-title {
+      margin: 0 0 12px;
+      font-size: 16px;
+    }
+    details {
+      margin-top: 12px;
+    }
+    pre {
+      overflow: auto;
+      max-height: 380px;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 12px;
+    }
+    .path {
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      color: #1d4ed8;
+      margin-bottom: 10px;
+    }
+    .url-grid {
+      display: grid;
+      grid-template-columns: 110px minmax(180px, 1fr);
+      gap: 10px 12px;
+      align-items: center;
+    }
+    .url-grid label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #374151;
+    }
+    .url-grid input,
+    .url-grid select {
+      width: 100%;
+      max-width: none;
+      padding: 9px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: white;
+      font: inherit;
+    }
+    .url-output {
+      width: 100%;
+      min-height: 76px;
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #f8fafc;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
+    .hint {
+      margin-top: 8px;
+      color: #64748b;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>범용 JSON 테이블 뷰어</h1>
+    <p>JSON 내부의 객체 배열을 자동으로 찾아 표로 표시합니다.</p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="controls">
+        <input id="fileInput" type="file" accept=".json,application/json" />
+        <button id="renderBtn">JSON 분석</button>
+        <button id="clearBtn" class="secondary">초기화</button>
+      </div>
+
+      <textarea id="jsonInput" placeholder="여기에 JSON 전체 내용을 붙여넣거나 JSON 파일을 선택하세요."></textarea>
+      <div id="status" class="status">JSON을 입력해주세요.</div>
+    </section>
+
+
+    <section id="urlPanel" class="panel" hidden>
+      <h2 class="section-title">파일명에서 요청 URL 복구</h2>
+
+      <div class="url-grid">
+        <label for="protocolSelect">프로토콜</label>
+        <select id="protocolSelect">
+          <option value="http">http</option>
+          <option value="https">https</option>
+        </select>
+
+        <label for="sourceFilename">파일명</label>
+        <input id="sourceFilename" type="text" readonly />
+
+        <label for="apiKeyInput">API Key</label>
+        <input id="apiKeyInput" type="text" placeholder="실제 API Key를 입력하세요" />
+      </div>
+
+      <div id="reconstructedUrl" class="url-output">파일을 선택하면 URL이 표시됩니다.</div>
+
+      <div class="controls" style="margin-top: 10px; margin-bottom: 0;">
+        <button id="copyUrlBtn">URL 복사</button>
+      </div>
+
+      <div class="hint">
+        파일명의 <code>apiKey</code>는 위 입력값으로 치환하고,
+        마지막 12자리 생성 시각(YYMMDDhhmmss)은 요청 URL에서 제외합니다.
+      </div>
+    </section>
+
+    <section id="arraySelectorPanel" class="panel" hidden>
+      <h2 class="section-title">표로 표시할 배열</h2>
+      <div class="controls">
+        <select id="arraySelector"></select>
+      </div>
+      <div id="selectedPath" class="path"></div>
+    </section>
+
+    <section id="summaryPanel" class="panel" hidden>
+      <div class="summary">
+        <div class="card">
+          <div class="label">행 수</div>
+          <div id="rowCount" class="value">0</div>
+        </div>
+        <div class="card">
+          <div class="label">컬럼 수</div>
+          <div id="columnCount" class="value">0</div>
+        </div>
+        <div class="card">
+          <div class="label">탐지된 객체 배열</div>
+          <div id="arrayCount" class="value">0</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="metaPanel" class="panel" hidden>
+      <h2 class="section-title">상위 메타데이터</h2>
+      <div id="metaGrid" class="meta-grid"></div>
+    </section>
+
+    <section class="panel">
+      <div id="tableContainer" class="empty">표시할 데이터가 없습니다.</div>
+
+      <details id="rawDetails" hidden>
+        <summary>원본 JSON 보기</summary>
+        <pre id="rawJson"></pre>
+      </details>
+    </section>
+  </main>
+
+  <script>
+    const fileInput = document.getElementById("fileInput");
+    const jsonInput = document.getElementById("jsonInput");
+    const renderBtn = document.getElementById("renderBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const statusEl = document.getElementById("status");
+    const tableContainer = document.getElementById("tableContainer");
+    const summaryPanel = document.getElementById("summaryPanel");
+    const metaPanel = document.getElementById("metaPanel");
+    const metaGrid = document.getElementById("metaGrid");
+    const rawDetails = document.getElementById("rawDetails");
+    const rawJson = document.getElementById("rawJson");
+    const arraySelectorPanel = document.getElementById("arraySelectorPanel");
+    const arraySelector = document.getElementById("arraySelector");
+    const selectedPath = document.getElementById("selectedPath");
+    const urlPanel = document.getElementById("urlPanel");
+    const protocolSelect = document.getElementById("protocolSelect");
+    const sourceFilename = document.getElementById("sourceFilename");
+    const apiKeyInput = document.getElementById("apiKeyInput");
+    const reconstructedUrl = document.getElementById("reconstructedUrl");
+    const copyUrlBtn = document.getElementById("copyUrlBtn");
+
+    let parsedData = null;
+    let discoveredArrays = [];
+
+    fileInput.addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        jsonInput.value = text;
+        analyzeJson(text);
+        setupUrlReconstruction(file.name);
+      } catch (e) {
+        setStatus("파일을 읽는 중 오류가 발생했습니다: " + e.message, true);
+      }
+    });
+
+    renderBtn.addEventListener("click", () => analyzeJson(jsonInput.value));
+
+    clearBtn.addEventListener("click", () => {
+      fileInput.value = "";
+      jsonInput.value = "";
+      parsedData = null;
+      discoveredArrays = [];
+      summaryPanel.hidden = true;
+      metaPanel.hidden = true;
+      arraySelectorPanel.hidden = true;
+      rawDetails.hidden = true;
+      urlPanel.hidden = true;
+      sourceFilename.value = "";
+      apiKeyInput.value = "";
+      reconstructedUrl.textContent = "파일을 선택하면 URL이 표시됩니다.";
+      tableContainer.className = "empty";
+      tableContainer.innerHTML = "표시할 데이터가 없습니다.";
+      setStatus("JSON을 입력해주세요.");
+    });
+
+    arraySelector.addEventListener("change", () => {
+      const index = Number(arraySelector.value);
+      renderSelectedArray(index);
+    });
+
+
+    apiKeyInput.addEventListener("input", updateReconstructedUrl);
+    protocolSelect.addEventListener("change", updateReconstructedUrl);
+
+    copyUrlBtn.addEventListener("click", async () => {
+      const url = reconstructedUrl.dataset.url || "";
+      if (!url) return;
+
+      try {
+        await navigator.clipboard.writeText(url);
+        const original = copyUrlBtn.textContent;
+        copyUrlBtn.textContent = "복사됨";
+        setTimeout(() => {
+          copyUrlBtn.textContent = original;
+        }, 1200);
+      } catch {
+        alert("클립보드 복사에 실패했습니다.");
+      }
+    });
+
+    function setupUrlReconstruction(filename) {
+      sourceFilename.value = filename;
+      urlPanel.hidden = false;
+
+      const parsed = parseRequestFilename(filename);
+
+      if (!parsed) {
+        reconstructedUrl.textContent =
+          "파일명에서 요청 URL 구조를 인식하지 못했습니다.";
+        reconstructedUrl.dataset.url = "";
+        return;
+      }
+
+      protocolSelect.value = parsed.protocol;
+      reconstructedUrl.dataset.filenameTemplate = JSON.stringify(parsed);
+      updateReconstructedUrl();
+    }
+
+    function parseRequestFilename(filename) {
+      let base = filename.replace(/\.json$/i, "");
+
+      // 파일 생성 시 붙인 YYMMDDhhmmss(12자리) 제거
+      base = base.replace(/_\d{12}$/, "");
+
+      const parts = base.split("_");
+      if (parts.length < 2) return null;
+
+      const host = parts.shift();
+      if (!host.includes(".")) return null;
+
+      let port = "";
+      if (parts[0] && /^\d{2,5}$/.test(parts[0])) {
+        port = parts.shift();
+      }
+
+      // 서울 열린데이터광장 API의 일반적인 엔드포인트에 맞춘 기본값.
+      // 사용자가 드롭다운에서 https로 바꿀 수 있음.
+      const protocol = "http";
+
+      return {
+        host,
+        port,
+        segments: parts,
+        protocol
+      };
+    }
+
+    function updateReconstructedUrl() {
+      const rawTemplate = reconstructedUrl.dataset.filenameTemplate;
+
+      if (!rawTemplate) return;
+
+      const parsed = JSON.parse(rawTemplate);
+      const apiKey = apiKeyInput.value.trim();
+
+      const encodedSegments = parsed.segments.map(segment => {
+        if (segment === "apiKey") {
+          return apiKey || "apiKey";
+        }
+
+        // 파일명에 실제 공백으로 남아 있던 URL segment는 %20으로 복구
+        if (segment === " ") {
+          return "%20";
+        }
+
+        return encodeURIComponent(segment)
+          .replace(/%2F/gi, "/");
+      });
+
+      const authority =
+        parsed.host + (parsed.port ? `:${parsed.port}` : "");
+
+      const url =
+        `${protocolSelect.value}://${authority}/${encodedSegments.join("/")}`;
+
+      reconstructedUrl.textContent = url;
+      reconstructedUrl.dataset.url = url;
+    }
+
+    function setStatus(message, isError = false) {
+      statusEl.textContent = message;
+      statusEl.className = "status" + (isError ? " error" : "");
+    }
+
+    function analyzeJson(text) {
+      if (!text.trim()) {
+        setStatus("JSON 내용이 비어 있습니다.", true);
+        return;
+      }
+
+      try {
+        parsedData = JSON.parse(text);
+      } catch (e) {
+        setStatus("JSON 파싱 실패: " + e.message, true);
+        return;
+      }
+
+      rawJson.textContent = JSON.stringify(parsedData, null, 2);
+      rawDetails.hidden = false;
+
+      discoveredArrays = findObjectArrays(parsedData);
+
+      if (discoveredArrays.length === 0) {
+        tableContainer.className = "empty";
+        tableContainer.innerHTML = "객체 배열을 찾지 못했습니다.";
+        summaryPanel.hidden = true;
+        arraySelectorPanel.hidden = true;
+        renderMetadata(parsedData, null);
+        setStatus("JSON은 읽었지만 표로 표시할 객체 배열을 찾지 못했습니다.", true);
+        return;
+      }
+
+      discoveredArrays.sort((a, b) => {
+        if (b.items.length !== a.items.length) {
+          return b.items.length - a.items.length;
+        }
+        return a.path.localeCompare(b.path);
+      });
+
+      arraySelector.innerHTML = "";
+      discoveredArrays.forEach((entry, index) => {
+        const option = document.createElement("option");
+        option.value = index;
+        option.textContent = `${entry.path} (${entry.items.length.toLocaleString()}행)`;
+        arraySelector.appendChild(option);
+      });
+
+      arraySelectorPanel.hidden = discoveredArrays.length <= 1;
+      document.getElementById("arrayCount").textContent = discoveredArrays.length.toLocaleString();
+
+      renderSelectedArray(0);
+      setStatus(`객체 배열 ${discoveredArrays.length.toLocaleString()}개를 찾았습니다.`);
+    }
+
+    function findObjectArrays(value, path = "$", results = []) {
+      if (Array.isArray(value)) {
+        const objectItems = value.filter(
+          item => item !== null && typeof item === "object" && !Array.isArray(item)
+        );
+
+        if (objectItems.length > 0 && objectItems.length === value.length) {
+          results.push({
+            path,
+            items: value
+          });
+        }
+
+        value.forEach((item, index) => {
+          if (item && typeof item === "object") {
+            findObjectArrays(item, `${path}[${index}]`, results);
+          }
+        });
+
+        return results;
+      }
+
+      if (value && typeof value === "object") {
+        for (const [key, child] of Object.entries(value)) {
+          const childPath = path === "$" ? `$.${key}` : `${path}.${key}`;
+          findObjectArrays(child, childPath, results);
+        }
+      }
+
+      return results;
+    }
+
+    function renderSelectedArray(index) {
+      const selected = discoveredArrays[index];
+      if (!selected) return;
+
+      selectedPath.textContent = selected.path;
+
+      renderSummary(selected.items);
+      renderMetadata(parsedData, selected.path);
+      renderTable(selected.items);
+    }
+
+    function renderSummary(items) {
+      const columns = collectColumns(items);
+      document.getElementById("rowCount").textContent = items.length.toLocaleString();
+      document.getElementById("columnCount").textContent = columns.length.toLocaleString();
+      summaryPanel.hidden = false;
+    }
+
+    function collectColumns(items) {
+      const set = new Set();
+      items.forEach(item => {
+        if (item && typeof item === "object") {
+          Object.keys(item).forEach(key => set.add(key));
+        }
+      });
+      return [...set];
+    }
+
+    function renderMetadata(root, selectedArrayPath) {
+      const metadata = [];
+
+      function walk(value, path = "$") {
+        if (path === selectedArrayPath) return;
+
+        if (Array.isArray(value)) {
+          metadata.push([path, `[Array ${value.length}]`]);
+          return;
+        }
+
+        if (value && typeof value === "object") {
+          const entries = Object.entries(value);
+
+          if (entries.length === 0) {
+            metadata.push([path, "{}"]);
+            return;
+          }
+
+          for (const [key, child] of entries) {
+            const childPath = path === "$" ? `$.${key}` : `${path}.${key}`;
+
+            if (childPath === selectedArrayPath) continue;
+
+            if (child === null || typeof child !== "object") {
+              metadata.push([childPath, child]);
+            } else if (Array.isArray(child)) {
+              metadata.push([childPath, `[Array ${child.length}]`]);
+            } else {
+              walk(child, childPath);
+            }
+          }
+        } else {
+          metadata.push([path, value]);
+        }
+      }
+
+      walk(root);
+
+      metaGrid.innerHTML = "";
+
+      if (metadata.length === 0) {
+        metaPanel.hidden = true;
+        return;
+      }
+
+      metadata.slice(0, 100).forEach(([key, value]) => {
+        const box = document.createElement("div");
+        box.className = "meta-item";
+
+        const keyEl = document.createElement("div");
+        keyEl.className = "meta-key";
+        keyEl.textContent = key;
+
+        const valueEl = document.createElement("div");
+        valueEl.className = "meta-value";
+        valueEl.textContent =
+          typeof value === "string" ? value : JSON.stringify(value);
+
+        box.appendChild(keyEl);
+        box.appendChild(valueEl);
+        metaGrid.appendChild(box);
+      });
+
+      metaPanel.hidden = false;
+    }
+
+    function compareValues(a, b) {
+      if (a === "" && b === "") return 0;
+      if (a === "") return 1;
+      if (b === "") return -1;
+
+      const numberPattern = /^-?\d+(\.\d+)?$/;
+      if (numberPattern.test(a) && numberPattern.test(b)) {
+        return Number(a) - Number(b);
+      }
+
+      const timePattern = /^\d{1,2}:\d{2}(:\d{2})?$/;
+      if (timePattern.test(a) && timePattern.test(b)) {
+        const toSeconds = (value) => {
+          const [h, m, s = "0"] = value.split(":").map(Number);
+          return h * 3600 + m * 60 + s;
+        };
+        return toSeconds(a) - toSeconds(b);
+      }
+
+      const isoLike = /[-T:]/;
+      const dateA = Date.parse(a);
+      const dateB = Date.parse(b);
+
+      if (
+        isoLike.test(a) &&
+        isoLike.test(b) &&
+        !Number.isNaN(dateA) &&
+        !Number.isNaN(dateB)
+      ) {
+        return dateA - dateB;
+      }
+
+      return a.localeCompare(b, "ko", {
+        numeric: true,
+        sensitivity: "base"
+      });
+    }
+
+    function renderTable(items) {
+      if (!items.length) {
+        tableContainer.className = "empty";
+        tableContainer.innerHTML = "배열이 비어 있습니다.";
+        return;
+      }
+
+      const columns = collectColumns(items);
+
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const tbody = document.createElement("tbody");
+      const headRow = document.createElement("tr");
+
+      let currentSort = { column: null, direction: "asc" };
+
+      columns.forEach((col, colIndex) => {
+        const th = document.createElement("th");
+        th.textContent = col;
+        th.title = "클릭하여 정렬";
+
+        th.addEventListener("click", () => {
+          const nextDirection =
+            currentSort.column === col && currentSort.direction === "asc"
+              ? "desc"
+              : "asc";
+
+          currentSort = { column: col, direction: nextDirection };
+
+          thead.querySelectorAll("th").forEach(header => {
+            header.classList.remove("sort-asc", "sort-desc");
+          });
+
+          th.classList.add(
+            nextDirection === "asc" ? "sort-asc" : "sort-desc"
+          );
+
+          const rows = Array.from(tbody.querySelectorAll("tr"));
+
+          rows.sort((a, b) => {
+            const aText =
+              a.children[colIndex]?.dataset.sortValue ??
+              a.children[colIndex]?.textContent?.trim() ??
+              "";
+
+            const bText =
+              b.children[colIndex]?.dataset.sortValue ??
+              b.children[colIndex]?.textContent?.trim() ??
+              "";
+
+            const result = compareValues(aText, bText);
+            return nextDirection === "asc" ? result : -result;
+          });
+
+          rows.forEach(row => tbody.appendChild(row));
+        });
+
+        headRow.appendChild(th);
+      });
+
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+
+      items.forEach(item => {
+        const tr = document.createElement("tr");
+
+        columns.forEach(col => {
+          const td = document.createElement("td");
+          const value = item?.[col];
+
+          let text = "";
+
+          if (value === null || value === undefined) {
+            text = "";
+          } else if (typeof value === "object") {
+            text = JSON.stringify(value);
+          } else {
+            text = String(value);
+          }
+
+          td.textContent = text;
+          td.dataset.sortValue = text;
+          td.title = text;
+          tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(tbody);
+
+      tableContainer.className = "table-wrap";
+      tableContainer.innerHTML = "";
+      tableContainer.appendChild(table);
+    }
+  </script>
+</body>
+</html>

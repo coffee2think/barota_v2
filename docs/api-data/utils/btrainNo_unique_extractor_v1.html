@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>btrainNo 중복 제거 추출기</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, "Noto Sans KR", sans-serif;
+      background: #f5f7fa;
+      color: #1f2937;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.05);
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 26px;
+    }
+
+    .description {
+      color: #6b7280;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+
+    .drop-zone {
+      border: 2px dashed #cbd5e1;
+      border-radius: 12px;
+      padding: 36px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: 0.2s;
+      background: #f8fafc;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.dragover {
+      border-color: #64748b;
+      background: #f1f5f9;
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    .file-name {
+      margin-top: 12px;
+      font-size: 14px;
+      color: #475569;
+      word-break: break-all;
+    }
+
+    .status {
+      margin: 20px 0;
+      padding: 14px 16px;
+      border-radius: 10px;
+      background: #f1f5f9;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+
+    .status.error {
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+
+    .summary {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 20px 0;
+    }
+
+    .summary-item {
+      flex: 1;
+      min-width: 180px;
+      background: #f8fafc;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 14px;
+    }
+
+    .summary-label {
+      font-size: 13px;
+      color: #64748b;
+    }
+
+    .summary-value {
+      margin-top: 4px;
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-size: 14px;
+      background: #111827;
+      color: #fff;
+    }
+
+    button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 360px;
+      resize: vertical;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      padding: 14px;
+      font-family: Consolas, monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      background: #fff;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>btrainNo 중복 제거 추출기</h1>
+
+      <div class="description">
+        서울 지하철 실시간 도착정보 JSON 파일을 선택하면
+        <code>realtimeArrivalList[].btrainNo</code> 값을 추출하고 중복을 제거합니다.
+      </div>
+
+      <label class="drop-zone" id="dropZone" for="fileInput">
+        <strong>JSON 파일 선택</strong><br />
+        또는 이 영역에 JSON 파일을 드래그해서 놓으세요.
+        <div class="file-name" id="fileName"></div>
+      </label>
+
+      <input type="file" id="fileInput" accept=".json,application/json" />
+
+      <div class="status" id="status">JSON 파일을 선택하세요.</div>
+
+      <div id="resultArea" class="hidden">
+        <div class="summary">
+          <div class="summary-item">
+            <div class="summary-label">전체 도착정보</div>
+            <div class="summary-value" id="totalRows">0</div>
+          </div>
+
+          <div class="summary-item">
+            <div class="summary-label">btrainNo 존재 데이터</div>
+            <div class="summary-value" id="validRows">0</div>
+          </div>
+
+          <div class="summary-item">
+            <div class="summary-label">중복 제거 btrainNo</div>
+            <div class="summary-value" id="uniqueCount">0</div>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <button id="copyBtn">목록 복사</button>
+          <button id="downloadTxtBtn" class="secondary">TXT 저장</button>
+          <button id="downloadJsonBtn" class="secondary">JSON 저장</button>
+          <button id="sortBtn" class="secondary">오름차순 정렬</button>
+        </div>
+
+        <textarea id="output" readonly></textarea>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById("fileInput");
+    const dropZone = document.getElementById("dropZone");
+    const fileName = document.getElementById("fileName");
+    const status = document.getElementById("status");
+    const resultArea = document.getElementById("resultArea");
+
+    const totalRows = document.getElementById("totalRows");
+    const validRows = document.getElementById("validRows");
+    const uniqueCount = document.getElementById("uniqueCount");
+    const output = document.getElementById("output");
+
+    const copyBtn = document.getElementById("copyBtn");
+    const downloadTxtBtn = document.getElementById("downloadTxtBtn");
+    const downloadJsonBtn = document.getElementById("downloadJsonBtn");
+    const sortBtn = document.getElementById("sortBtn");
+
+    let uniqueBtrainNos = [];
+    let originalFileName = "btrainNo";
+
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files[0];
+      if (file) handleFile(file);
+    });
+
+    dropZone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      dropZone.classList.add("dragover");
+    });
+
+    dropZone.addEventListener("dragleave", () => {
+      dropZone.classList.remove("dragover");
+    });
+
+    dropZone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dropZone.classList.remove("dragover");
+
+      const file = event.dataTransfer.files[0];
+      if (file) {
+        handleFile(file);
+      }
+    });
+
+    async function handleFile(file) {
+      fileName.textContent = file.name;
+      originalFileName = file.name.replace(/\.json$/i, "");
+
+      status.className = "status";
+      status.textContent = "파일을 읽고 있습니다...";
+      resultArea.classList.add("hidden");
+
+      try {
+        const text = await file.text();
+
+        status.textContent = "JSON을 분석하고 있습니다...";
+
+        const json = JSON.parse(text);
+
+        if (!Array.isArray(json.realtimeArrivalList)) {
+          throw new Error("realtimeArrivalList 배열을 찾을 수 없습니다.");
+        }
+
+        const list = json.realtimeArrivalList;
+
+        const values = list
+          .map(item => item?.btrainNo)
+          .filter(value =>
+            value !== null &&
+            value !== undefined &&
+            String(value).trim() !== ""
+          )
+          .map(value => String(value).trim());
+
+        // Set은 삽입 순서를 유지하므로 최초 등장 순서대로 중복 제거됨
+        uniqueBtrainNos = [...new Set(values)];
+
+        totalRows.textContent = list.length.toLocaleString();
+        validRows.textContent = values.length.toLocaleString();
+        uniqueCount.textContent = uniqueBtrainNos.length.toLocaleString();
+
+        renderOutput();
+
+        status.textContent =
+          `완료\n` +
+          `전체 ${list.length.toLocaleString()}건 중 ` +
+          `중복되지 않는 btrainNo ${uniqueBtrainNos.length.toLocaleString()}개를 추출했습니다.`;
+
+        resultArea.classList.remove("hidden");
+      } catch (error) {
+        console.error(error);
+
+        status.className = "status error";
+        status.textContent = "처리 실패: " + error.message;
+
+        resultArea.classList.add("hidden");
+      }
+    }
+
+    function renderOutput() {
+      output.value = uniqueBtrainNos.join("\n");
+    }
+
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(output.value);
+        copyBtn.textContent = "복사 완료";
+
+        setTimeout(() => {
+          copyBtn.textContent = "목록 복사";
+        }, 1200);
+      } catch {
+        output.select();
+        document.execCommand("copy");
+      }
+    });
+
+    sortBtn.addEventListener("click", () => {
+      uniqueBtrainNos.sort((a, b) =>
+        a.localeCompare(b, "ko", {
+          numeric: true,
+          sensitivity: "base"
+        })
+      );
+
+      renderOutput();
+    });
+
+    downloadTxtBtn.addEventListener("click", () => {
+      downloadFile(
+        uniqueBtrainNos.join("\n"),
+        `${originalFileName}_unique_btrainNo.txt`,
+        "text/plain;charset=utf-8"
+      );
+    });
+
+    downloadJsonBtn.addEventListener("click", () => {
+      const result = {
+        count: uniqueBtrainNos.length,
+        btrainNoList: uniqueBtrainNos
+      };
+
+      downloadFile(
+        JSON.stringify(result, null, 2),
+        `${originalFileName}_unique_btrainNo.json`,
+        "application/json;charset=utf-8"
+      );
+    });
+
+    function downloadFile(content, filename, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>

@@ -5,11 +5,13 @@ import com.gilbit.barota.data.remote.SeoulSubwayApi
 import com.gilbit.barota.data.remote.TimetableApi
 import com.gilbit.barota.data.repository.AssetStationRepository
 import com.gilbit.barota.data.repository.AssetRouteNetworkRepository
+import com.gilbit.barota.data.repository.AssetTrainNumberMappingStore
 import com.gilbit.barota.data.repository.ArrivalRepository
 import com.gilbit.barota.data.repository.SeoulArrivalRepository
 import com.gilbit.barota.data.repository.SeoulTrainStopRepository
-import com.gilbit.barota.data.repository.StationRepository
 import com.gilbit.barota.data.repository.RouteNetworkRepository
+import com.gilbit.barota.data.repository.StationRepository
+import com.gilbit.barota.data.repository.TrainNumberMappingStore
 import com.gilbit.barota.data.repository.TrainStopRepository
 import dagger.Binds
 import dagger.Module
@@ -49,6 +51,12 @@ abstract class AppModule {
     abstract fun bindTrainStopRepository(
         repository: SeoulTrainStopRepository,
     ): TrainStopRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindTrainNumberMappingStore(
+        store: AssetTrainNumberMappingStore,
+    ): TrainNumberMappingStore
 
     companion object {
         @Provides

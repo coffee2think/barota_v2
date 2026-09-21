@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>지하철 시간표 JSON 뷰어</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f7fb;
+      color: #1f2937;
+    }
+    header {
+      padding: 20px 28px;
+      background: #111827;
+      color: white;
+    }
+    header h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+    }
+    header p {
+      margin: 0;
+      color: #cbd5e1;
+      font-size: 14px;
+    }
+    main {
+      padding: 20px 28px 32px;
+    }
+    .panel {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    input[type="file"] {
+      max-width: 320px;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 9px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      background: #2563eb;
+      color: white;
+    }
+    button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
+    textarea {
+      width: 100%;
+      min-height: 180px;
+      resize: vertical;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .status {
+      margin-top: 10px;
+      font-size: 14px;
+      color: #4b5563;
+    }
+    .status.error {
+      color: #dc2626;
+      font-weight: 700;
+    }
+    .summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .card {
+      min-width: 160px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+    }
+    .card .label {
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .card .value {
+      font-size: 17px;
+      font-weight: 800;
+    }
+    .table-wrap {
+      overflow: auto;
+      max-height: 70vh;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+    }
+    table {
+      width: max-content;
+      min-width: 100%;
+      border-collapse: collapse;
+      background: white;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #e5e7eb;
+      border-right: 1px solid #f1f5f9;
+      text-align: left;
+      white-space: nowrap;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #f8fafc;
+      font-weight: 800;
+      cursor: pointer;
+      user-select: none;
+    }
+    th:hover {
+      background: #eef2ff;
+    }
+    th.sort-asc::after {
+      content: " ▲";
+      font-size: 11px;
+      color: #2563eb;
+    }
+    th.sort-desc::after {
+      content: " ▼";
+      font-size: 11px;
+      color: #2563eb;
+    }
+    tr:hover td {
+      background: #f8fbff;
+    }
+    .empty {
+      padding: 28px;
+      text-align: center;
+      color: #6b7280;
+    }
+    details {
+      margin-top: 12px;
+    }
+    pre {
+      overflow: auto;
+      max-height: 360px;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>지하철 시간표 JSON 뷰어</h1>
+    <p>서울시 API의 response.body.items.item 배열을 표 형태로 확인합니다.</p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="controls">
+        <input id="fileInput" type="file" accept=".json,application/json" />
+        <button id="renderBtn">JSON 표시</button>
+        <button id="clearBtn" class="secondary">초기화</button>
+      </div>
+
+      <textarea id="jsonInput" placeholder="여기에 JSON 전체 내용을 붙여넣거나, 위에서 JSON 파일을 선택하세요."></textarea>
+      <div id="status" class="status">JSON을 입력해주세요.</div>
+    </section>
+
+    <section id="summaryPanel" class="panel" hidden>
+      <div class="summary">
+        <div class="card">
+          <div class="label">조회 건수</div>
+          <div id="rowCount" class="value">0</div>
+        </div>
+        <div class="card">
+          <div class="label">열차 수</div>
+          <div id="trainCount" class="value">0</div>
+        </div>
+        <div class="card">
+          <div class="label">역 수</div>
+          <div id="stationCount" class="value">0</div>
+        </div>
+        <div class="card">
+          <div class="label">노선</div>
+          <div id="lineNames" class="value">-</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div id="tableContainer" class="empty">표시할 데이터가 없습니다.</div>
+      <details id="rawDetails" hidden>
+        <summary>원본 JSON 보기</summary>
+        <pre id="rawJson"></pre>
+      </details>
+    </section>
+  </main>
+
+  <script>
+    const fileInput = document.getElementById("fileInput");
+    const jsonInput = document.getElementById("jsonInput");
+    const renderBtn = document.getElementById("renderBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const statusEl = document.getElementById("status");
+    const tableContainer = document.getElementById("tableContainer");
+    const summaryPanel = document.getElementById("summaryPanel");
+    const rawDetails = document.getElementById("rawDetails");
+    const rawJson = document.getElementById("rawJson");
+
+    fileInput.addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        jsonInput.value = text;
+        renderJson(text);
+      } catch (e) {
+        setStatus("파일을 읽는 중 오류가 발생했습니다: " + e.message, true);
+      }
+    });
+
+    renderBtn.addEventListener("click", () => {
+      renderJson(jsonInput.value);
+    });
+
+    clearBtn.addEventListener("click", () => {
+      fileInput.value = "";
+      jsonInput.value = "";
+      summaryPanel.hidden = true;
+      rawDetails.hidden = true;
+      tableContainer.className = "empty";
+      tableContainer.innerHTML = "표시할 데이터가 없습니다.";
+      setStatus("JSON을 입력해주세요.");
+    });
+
+    function setStatus(message, isError = false) {
+      statusEl.textContent = message;
+      statusEl.className = "status" + (isError ? " error" : "");
+    }
+
+    function renderJson(text) {
+      if (!text.trim()) {
+        setStatus("JSON 내용이 비어 있습니다.", true);
+        return;
+      }
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        setStatus("JSON 파싱 실패: " + e.message, true);
+        return;
+      }
+
+      const items = extractItems(data);
+
+      if (!Array.isArray(items)) {
+        setStatus("response.body.items.item 배열을 찾지 못했습니다.", true);
+        tableContainer.className = "empty";
+        tableContainer.innerHTML = "예상한 구조의 데이터가 없습니다.";
+        summaryPanel.hidden = true;
+        rawJson.textContent = JSON.stringify(data, null, 2);
+        rawDetails.hidden = false;
+        return;
+      }
+
+      rawJson.textContent = JSON.stringify(data, null, 2);
+      rawDetails.hidden = false;
+
+      renderSummary(items);
+      renderTable(items);
+      setStatus(`정상적으로 ${items.length.toLocaleString()}건을 표시했습니다.`);
+    }
+
+    function extractItems(data) {
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.response?.body?.items?.item)) {
+        return data.response.body.items.item;
+      }
+      if (Array.isArray(data?.body?.items?.item)) {
+        return data.body.items.item;
+      }
+      if (Array.isArray(data?.items?.item)) {
+        return data.items.item;
+      }
+      if (Array.isArray(data?.item)) {
+        return data.item;
+      }
+      return null;
+    }
+
+    function renderSummary(items) {
+      const trainNos = new Set(items.map(x => x?.trainno).filter(Boolean));
+      const stations = new Set(items.map(x => x?.stnNm).filter(Boolean));
+      const lines = [...new Set(items.map(x => x?.lineNm).filter(Boolean))];
+
+      document.getElementById("rowCount").textContent = items.length.toLocaleString();
+      document.getElementById("trainCount").textContent = trainNos.size.toLocaleString();
+      document.getElementById("stationCount").textContent = stations.size.toLocaleString();
+      document.getElementById("lineNames").textContent = lines.join(", ") || "-";
+
+      summaryPanel.hidden = false;
+    }
+
+    function compareValues(a, b) {
+      if (a === "" && b === "") return 0;
+      if (a === "") return 1;
+      if (b === "") return -1;
+
+      const numberPattern = /^-?\d+(\.\d+)?$/;
+      if (numberPattern.test(a) && numberPattern.test(b)) {
+        return Number(a) - Number(b);
+      }
+
+      const timePattern = /^\d{1,2}:\d{2}(:\d{2})?$/;
+      if (timePattern.test(a) && timePattern.test(b)) {
+        const toSeconds = (value) => {
+          const [h, m, s = "0"] = value.split(":").map(Number);
+          return h * 3600 + m * 60 + s;
+        };
+        return toSeconds(a) - toSeconds(b);
+      }
+
+      const dateA = Date.parse(a);
+      const dateB = Date.parse(b);
+      if (!Number.isNaN(dateA) && !Number.isNaN(dateB) && /[-T]/.test(a) && /[-T]/.test(b)) {
+        return dateA - dateB;
+      }
+
+      return a.localeCompare(b, "ko", {
+        numeric: true,
+        sensitivity: "base"
+      });
+    }
+
+    function renderTable(items) {
+      if (items.length === 0) {
+        tableContainer.className = "empty";
+        tableContainer.innerHTML = "item 배열이 비어 있습니다.";
+        return;
+      }
+
+      const preferredColumns = [
+        "trainno",
+        "trainKnd",
+        "upbdnbSe",
+        "wkndSe",
+        "lineNm",
+        "brlnNm",
+        "stnCd",
+        "stnNo",
+        "stnNm",
+        "dptreLineNm",
+        "dptreStnCd",
+        "dptreStnNm",
+        "dptreStnNo",
+        "arvlLineNm",
+        "arvlStnCd",
+        "arvlStnNm",
+        "arvlStnNo",
+        "trainDptreTm",
+        "trainArvlTm",
+        "tmprTmtblYn",
+        "vldBgngDt",
+        "vldEndDt",
+        "crtrYmd"
+      ];
+
+      const discovered = new Set();
+      for (const item of items) {
+        if (item && typeof item === "object") {
+          Object.keys(item).forEach(key => discovered.add(key));
+        }
+      }
+
+      const columns = [
+        ...preferredColumns.filter(col => discovered.has(col)),
+        ...[...discovered].filter(col => !preferredColumns.includes(col))
+      ];
+
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+
+      let currentSort = { column: null, direction: "asc" };
+
+      for (const col of columns) {
+        const th = document.createElement("th");
+        th.textContent = col;
+        th.dataset.column = col;
+        th.title = "클릭하여 정렬";
+
+        th.addEventListener("click", () => {
+          const nextDirection =
+            currentSort.column === col && currentSort.direction === "asc"
+              ? "desc"
+              : "asc";
+
+          currentSort = { column: col, direction: nextDirection };
+
+          thead.querySelectorAll("th").forEach(header => {
+            header.classList.remove("sort-asc", "sort-desc");
+          });
+          th.classList.add(nextDirection === "asc" ? "sort-asc" : "sort-desc");
+
+          const rows = Array.from(tbody.querySelectorAll("tr"));
+          const colIndex = columns.indexOf(col);
+
+          rows.sort((a, b) => {
+            const aText = a.children[colIndex]?.textContent?.trim() ?? "";
+            const bText = b.children[colIndex]?.textContent?.trim() ?? "";
+            const result = compareValues(aText, bText);
+            return nextDirection === "asc" ? result : -result;
+          });
+
+          rows.forEach(row => tbody.appendChild(row));
+        });
+
+        headRow.appendChild(th);
+      }
+
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
+
+      for (const item of items) {
+        const tr = document.createElement("tr");
+
+        for (const col of columns) {
+          const td = document.createElement("td");
+          const value = item?.[col];
+
+          if (value === null || value === undefined) {
+            td.textContent = "";
+          } else if (typeof value === "object") {
+            td.textContent = JSON.stringify(value);
+          } else {
+            td.textContent = String(value);
+          }
+
+          tr.appendChild(td);
+        }
+
+        tbody.appendChild(tr);
+      }
+
+      table.appendChild(tbody);
+
+      tableContainer.className = "table-wrap";
+      tableContainer.innerHTML = "";
+      tableContainer.appendChild(table);
+    }
+  </script>
+</body>
+</html>
