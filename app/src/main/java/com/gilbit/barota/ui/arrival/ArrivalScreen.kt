@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Train
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -282,6 +283,7 @@ private fun ArrivalCard(
         DestinationStopStatus.DOES_NOT_STOP -> Color(0xFF681411)
         DestinationStopStatus.UNKNOWN -> MaterialTheme.colorScheme.onSurface
     }
+    val chipColors = AssistChipDefaults.assistChipColors(labelColor = contentColor)
     val cardTag = when (stopStatus) {
         DestinationStopStatus.STOPS -> "arrival-card-green"
         DestinationStopStatus.DOES_NOT_STOP -> "arrival-card-red-flashing"
@@ -364,13 +366,21 @@ private fun ArrivalCard(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 if (arrival.terminalStation.isNotBlank()) {
-                    AssistChip(onClick = {}, label = { Text("행선지 ${arrival.terminalStation}행") })
+                    AssistChip(
+                        onClick = {},
+                        label = { Text("행선지 ${arrival.terminalStation}행") },
+                        colors = chipColors,
+                    )
                 }
                 if (arrival.trainType.isNotBlank()) {
-                    AssistChip(onClick = {}, label = { Text("열차 종류 ${arrival.trainType}") })
+                    AssistChip(
+                        onClick = {},
+                        label = { Text("열차 종류 ${arrival.trainType}") },
+                        colors = chipColors,
+                    )
                 }
                 if (arrival.isLastTrain) {
-                    AssistChip(onClick = {}, label = { Text("막차") })
+                    AssistChip(onClick = {}, label = { Text("막차") }, colors = chipColors)
                 }
             }
         }
