@@ -29,8 +29,8 @@ android {
         applicationId = "com.gilbit.barota"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         buildConfigField("String", "SEOUL_SUBWAY_API_KEY", "\"$seoulSubwayApiKey\"")
         buildConfigField("String", "SEOUL_TIMETABLE_API_KEY", "\"$seoulTimetableApiKey\"")
