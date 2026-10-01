@@ -11,6 +11,8 @@ import com.gilbit.barota.data.repository.SeoulArrivalRepository
 import com.gilbit.barota.data.repository.SeoulTrainStopRepository
 import com.gilbit.barota.data.repository.RouteNetworkRepository
 import com.gilbit.barota.data.repository.StationRepository
+import com.gilbit.barota.data.repository.StationUsageRepository
+import com.gilbit.barota.data.repository.SqliteStationUsageRepository
 import com.gilbit.barota.data.repository.TrainNumberMappingStore
 import com.gilbit.barota.data.repository.TrainStopRepository
 import dagger.Binds
@@ -28,6 +30,12 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class AppModule {
+    @Binds
+    @Singleton
+    abstract fun bindStationUsageRepository(
+        repository: SqliteStationUsageRepository,
+    ): StationUsageRepository
+
     @Binds
     @Singleton
     abstract fun bindRouteNetworkRepository(

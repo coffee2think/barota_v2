@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -72,11 +73,7 @@ fun StationSelectionRoute(
         onStationSelected = viewModel::selectStation,
         onSwap = viewModel::swapStations,
         onMessageShown = viewModel::clearMessage,
-        onSearch = {
-            val origin = uiState.origin
-            val destination = uiState.destination
-            if (origin != null && destination != null) onSearch(origin, destination)
-        },
+        onSearch = { viewModel.confirmSearch(onSearch) },
     )
 }
 
@@ -185,6 +182,7 @@ fun StationSelectionScreen(
             target = uiState.selectionTarget,
             query = uiState.query,
             stations = uiState.filteredStations,
+            frequentStations = uiState.frequentStations,
             onQueryChange = onQueryChange,
             onStationSelected = onStationSelected,
             onDismiss = onCloseSelector,
@@ -256,10 +254,13 @@ private fun StationPickerSheet(
     target: SelectionTarget,
     query: String,
     stations: List<Station>,
+    frequentStations: List<Station>,
     onQueryChange: (String) -> Unit,
     onStationSelected: (Station) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(query.trim()) { listState.scrollToItem(0) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -300,9 +301,20 @@ private fun StationPickerSheet(
                 }
             } else {
                 LazyColumn(
+                    state = listState,
                     contentPadding = PaddingValues(bottom = 24.dp),
                 ) {
-                    items(stations, key = Station::id) { station ->
+                    if (query.isBlank()) {
+                        if (frequentStations.isNotEmpty()) {
+                            item(key = "frequent-header") { StationSectionTitle("자주 찾는 역") }
+                            items(frequentStations, key = { "frequent-${it.id}" }) { station ->
+                                StationRow(station = station, onClick = { onStationSelected(station) })
+                                HorizontalDivider(modifier = Modifier.padding(start = 76.dp))
+                            }
+                        }
+                        item(key = "all-header") { StationSectionTitle("전체 역") }
+                    }
+                    items(stations, key = { "all-${it.id}" }) { station ->
                         StationRow(station = station, onClick = { onStationSelected(station) })
                         HorizontalDivider(modifier = Modifier.padding(start = 76.dp))
                     }
@@ -310,6 +322,17 @@ private fun StationPickerSheet(
             }
         }
     }
+}
+
+@Composable
+private fun StationSectionTitle(title: String) {
+    Text(
+        title,
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontWeight = FontWeight.Bold,
+    )
 }
 
 @Composable
