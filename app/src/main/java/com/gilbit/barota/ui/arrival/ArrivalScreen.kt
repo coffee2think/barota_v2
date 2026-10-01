@@ -57,6 +57,15 @@ import com.gilbit.barota.ui.selection.LineBadges
 import com.gilbit.barota.domain.RouteDirectionResult
 import com.gilbit.barota.domain.effectiveArrivalSeconds
 
+private val StopsScreenColor = Color(0xFFDDF6E8)
+private val StopsCardColor = Color(0xFFB8E8CE)
+private val StopsContentColor = Color(0xFF075E38)
+private val DoesNotStopScreenColorStart = Color(0xFFFFDAD6)
+private val DoesNotStopScreenColorEnd = Color(0xFFFF8A80)
+private val DoesNotStopCardColorStart = Color(0xFFFFB4AB)
+private val DoesNotStopCardColorEnd = Color(0xFFFF665C)
+private val DoesNotStopContentColor = Color(0xFF681411)
+
 @Composable
 fun ArrivalRoute(
     originName: String,
@@ -99,18 +108,32 @@ fun ArrivalScreen(
     val screenStopStatus = firstArrival?.destinationStopStatus ?: DestinationStopStatus.UNKNOWN
     val warningPulse = rememberInfiniteTransition(label = "미정차 경고 점멸")
     val flashingRed by warningPulse.animateColor(
-        initialValue = Color(0xFFFFDAD6),
-        targetValue = Color(0xFFFF8A80),
+        initialValue = DoesNotStopScreenColorStart,
+        targetValue = DoesNotStopScreenColorEnd,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 700),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "미정차 빨간 배경",
     )
+    val cardFlashingRed by warningPulse.animateColor(
+        initialValue = DoesNotStopCardColorStart,
+        targetValue = DoesNotStopCardColorEnd,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 700),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "미정차 카드 빨간 배경",
+    )
     val screenBackgroundColor = when (screenStopStatus) {
-        DestinationStopStatus.STOPS -> Color(0xFFDDF6E8)
+        DestinationStopStatus.STOPS -> StopsScreenColor
         DestinationStopStatus.DOES_NOT_STOP -> flashingRed
         DestinationStopStatus.UNKNOWN -> MaterialTheme.colorScheme.background
+    }
+    val screenContentColor = when (screenStopStatus) {
+        DestinationStopStatus.STOPS -> StopsContentColor
+        DestinationStopStatus.DOES_NOT_STOP -> DoesNotStopContentColor
+        DestinationStopStatus.UNKNOWN -> MaterialTheme.colorScheme.onBackground
     }
 
     Scaffold(
@@ -128,6 +151,9 @@ fun ArrivalScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = screenBackgroundColor,
                     scrolledContainerColor = screenBackgroundColor,
+                    navigationIconContentColor = screenContentColor,
+                    titleContentColor = screenContentColor,
+                    actionIconContentColor = screenContentColor,
                 ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -220,7 +246,7 @@ fun ArrivalScreen(
                     items(uiState.arrivals, key = TrainArrival::id) { arrival ->
                         ArrivalCard(
                             arrival = arrival,
-                            flashingRed = flashingRed,
+                            flashingRed = cardFlashingRed,
                         )
                     }
                     if (uiState.errorMessage != null) {
@@ -242,7 +268,10 @@ private fun RouteHeader(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
         shape = RoundedCornerShape(20.dp),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -274,13 +303,13 @@ private fun ArrivalCard(
 ) {
     val stopStatus = arrival.destinationStopStatus
     val containerColor = when (stopStatus) {
-        DestinationStopStatus.STOPS -> Color(0xFFDDF6E8)
+        DestinationStopStatus.STOPS -> StopsCardColor
         DestinationStopStatus.DOES_NOT_STOP -> flashingRed
         DestinationStopStatus.UNKNOWN -> MaterialTheme.colorScheme.surfaceContainer
     }
     val contentColor = when (stopStatus) {
-        DestinationStopStatus.STOPS -> Color(0xFF075E38)
-        DestinationStopStatus.DOES_NOT_STOP -> Color(0xFF681411)
+        DestinationStopStatus.STOPS -> StopsContentColor
+        DestinationStopStatus.DOES_NOT_STOP -> DoesNotStopContentColor
         DestinationStopStatus.UNKNOWN -> MaterialTheme.colorScheme.onSurface
     }
     val chipColors = AssistChipDefaults.assistChipColors(labelColor = contentColor)
