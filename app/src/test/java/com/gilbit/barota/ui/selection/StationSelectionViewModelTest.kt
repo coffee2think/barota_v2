@@ -174,4 +174,67 @@ class StationSelectionViewModelTest {
         },
         usageRepository = history,
     )
+
+    @Test fun shortcutsSaveLaunchOnceAndReturnToRecommendationsAfterRemoval() = runTest {
+        val vm = viewModel()
+        advanceUntilIdle()
+        val route = com.gilbit.barota.domain.RouteShortcut(gangnam, seoul)
+        vm.toggleSavedRoute(route)
+        vm.toggleSavedRoute(route)
+        advanceUntilIdle()
+        assertEquals(listOf(route), vm.uiState.value.savedRoutes)
+        assertTrue(history.pairs.isEmpty())
+        var launches = 0
+        vm.launchRoute(route) { _, _ -> launches++ }
+        vm.launchRoute(route) { _, _ -> launches++ }
+        advanceUntilIdle()
+        assertEquals(1, launches)
+        assertEquals(1, history.pairs.size)
+        assertTrue(history.usage.value.isEmpty())
+        assertEquals(gangnam, vm.uiState.value.origin)
+        assertEquals(seoul, vm.uiState.value.destination)
+        assertTrue(vm.uiState.value.recommendedRoutes.isEmpty())
+        vm.toggleSavedRoute(route)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.savedRoutes.isEmpty())
+        assertEquals(listOf(route), vm.uiState.value.recommendedRoutes)
+    }
+
+    @Test fun failedShortcutWritesPreserveStateAndDoNotBlockLaunchOrLaterSave() = runTest {
+        val vm = viewModel()
+        advanceUntilIdle()
+        val route = com.gilbit.barota.domain.RouteShortcut(gangnam, seoul)
+        history.failWrites = true
+        vm.toggleSavedRoute(route)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.savedRoutes.isEmpty())
+        assertFalse(vm.uiState.value.isSavingRoute)
+        var launches = 0
+        vm.launchRoute(route) { _, _ -> launches++ }
+        advanceUntilIdle()
+        assertEquals(1, launches)
+        history.failWrites = false
+        vm.toggleSavedRoute(route)
+        advanceUntilIdle()
+        assertEquals(listOf(route), vm.uiState.value.savedRoutes)
+        history.failWrites = true
+        vm.toggleSavedRoute(route)
+        advanceUntilIdle()
+        assertEquals(listOf(route), vm.uiState.value.savedRoutes)
+    }
+
+    @Test fun failedRouteReadsStillAllowManualSelectionAndSearch() = runTest {
+        history.failRouteReads = true
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.openSelector(SelectionTarget.ORIGIN)
+        vm.selectStation(gangnam)
+        vm.openSelector(SelectionTarget.DESTINATION)
+        vm.selectStation(seoul)
+        var launches = 0
+        vm.confirmSearch { _, _ -> launches++ }
+        advanceUntilIdle()
+        assertEquals(1, launches)
+        assertTrue(vm.uiState.value.savedRoutes.isEmpty())
+    }
 }

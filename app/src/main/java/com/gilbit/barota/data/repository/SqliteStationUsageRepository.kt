@@ -4,6 +4,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.gilbit.barota.data.model.StationPairUsage
+import com.gilbit.barota.data.model.SavedStationPair
 import com.gilbit.barota.data.model.StationUsage
 import com.gilbit.barota.data.model.StationUsageRole
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -17,8 +18,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class StationUsageDatabase(context: Context, name: String = "station-usage.db") :
-    SQLiteOpenHelper(context, name, null, 1) {
+    SQLiteOpenHelper(context, name, null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
+        createSavedPairs(db)
         db.execSQL("""
             CREATE TABLE station_usage (
                 station_id TEXT PRIMARY KEY NOT NULL,
@@ -39,8 +41,12 @@ class StationUsageDatabase(context: Context, name: String = "station-usage.db") 
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Future schema versions must add explicit, non-destructive migrations here.
-        error("Missing station usage migration: $oldVersion -> $newVersion")
+        if (oldVersion == 1 && newVersion == 2) createSavedPairs(db)
+        else error("Missing station usage migration: $oldVersion -> $newVersion")
+    }
+
+    private fun createSavedPairs(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE saved_station_pair (origin_id TEXT NOT NULL, destination_id TEXT NOT NULL, saved_at INTEGER NOT NULL, PRIMARY KEY (origin_id, destination_id))")
     }
 }
 
@@ -55,6 +61,41 @@ class SqliteStationUsageRepository private constructor(
 
     private val mutex = Mutex()
     private val usage = MutableStateFlow<Map<String, StationUsage>>(emptyMap())
+    private val pairs = MutableStateFlow<List<StationPairUsage>>(emptyList())
+    private val savedPairs = MutableStateFlow<List<SavedStationPair>>(emptyList())
+
+    override fun observePairs() = flow {
+        withContext(Dispatchers.IO) { mutex.withLock { pairs.value = readPairs() } }
+        emitAll(pairs)
+    }
+
+    override fun observeSavedPairs() = flow {
+        withContext(Dispatchers.IO) { mutex.withLock { savedPairs.value = readSavedPairs() } }
+        emitAll(savedPairs)
+    }
+
+    override suspend fun savePair(originId: String, destinationId: String, savedAt: Long) {
+        require(originId != destinationId)
+        withContext(Dispatchers.IO) { mutex.withLock {
+            database.writableDatabase.execSQL("INSERT OR IGNORE INTO saved_station_pair VALUES (?, ?, ?)", arrayOf<Any>(originId, destinationId, savedAt))
+            savedPairs.value = readSavedPairs()
+        } }
+    }
+
+    override suspend fun removeSavedPair(originId: String, destinationId: String) {
+        withContext(Dispatchers.IO) { mutex.withLock {
+            database.writableDatabase.delete("saved_station_pair", "origin_id = ? AND destination_id = ?", arrayOf(originId, destinationId))
+            savedPairs.value = readSavedPairs()
+        } }
+    }
+
+    private fun readSavedPairs() = database.readableDatabase.rawQuery("SELECT origin_id, destination_id, saved_at FROM saved_station_pair", null).use { cursor ->
+        buildList { while (cursor.moveToNext()) add(SavedStationPair(cursor.getString(0), cursor.getString(1), cursor.getLong(2))) }
+    }
+
+    private fun readPairs() = database.readableDatabase.rawQuery("SELECT origin_id, destination_id, usage_count, last_used_at FROM station_pair_usage", null).use { cursor ->
+        buildList { while (cursor.moveToNext()) add(StationPairUsage(cursor.getString(0), cursor.getString(1), cursor.getLong(2), cursor.getLong(3))) }
+    }
 
     override fun observeUsage() = flow {
         withContext(Dispatchers.IO) { mutex.withLock { usage.value = readUsage() } }
@@ -104,6 +145,7 @@ class SqliteStationUsageRepository private constructor(
                 } finally {
                     db.endTransaction()
                 }
+                pairs.value = readPairs()
             }
         }
     }

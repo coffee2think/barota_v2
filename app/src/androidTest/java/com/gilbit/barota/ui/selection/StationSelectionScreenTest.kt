@@ -2,6 +2,9 @@ package com.gilbit.barota.ui.selection
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsEnabled
@@ -10,6 +13,8 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import com.gilbit.barota.domain.RouteShortcut
 import com.gilbit.barota.data.model.Station
 import com.gilbit.barota.ui.theme.SubwayBarotaTheme
 import org.junit.Assert.assertTrue
@@ -17,6 +22,28 @@ import org.junit.Rule
 import org.junit.Test
 
 class StationSelectionScreenTest {
+    @Test fun shortcutSaveButtonDoesNotLaunchAndRouteRemainsReachableByScrolling() {
+        val route = RouteShortcut(gangnam, seoul)
+        var launches = 0
+        var saves = 0
+        composeRule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {
+            SubwayBarotaTheme(dynamicColor = false) {
+                StationSelectionScreen(
+                    uiState = StationSelectionUiState(isLoading = false, recommendedRoutes = listOf(route)),
+                    onOpenSelector = {}, onCloseSelector = {}, onQueryChange = {}, onStationSelected = {},
+                    onSwap = {}, onMessageShown = {}, onSearch = {},
+                    onRouteLaunch = { launches++ }, onToggleSavedRoute = { saves++ },
+                )
+            }
+            }
+        }
+        composeRule.onNodeWithText("출발역과 도착역을 선택하고 경로를 저장해 보세요.").performScrollTo().assertExists()
+        composeRule.onNodeWithContentDescription("강남 → 서울역 경로 저장").performScrollTo().performClick()
+        composeRule.runOnIdle { assertTrue(saves == 1 && launches == 0) }
+        composeRule.onNodeWithContentDescription("강남에서 서울역 도착 정보 바로 실행").performScrollTo().performClick()
+        composeRule.runOnIdle { assertTrue(launches == 1) }
+    }
     @get:Rule
     val composeRule = createComposeRule()
 
