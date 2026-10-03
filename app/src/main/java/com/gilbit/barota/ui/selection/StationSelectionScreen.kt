@@ -2,6 +2,8 @@ package com.gilbit.barota.ui.selection
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +42,7 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gilbit.barota.data.model.Station
+import com.gilbit.barota.domain.RouteShortcut
 
 @Composable
 fun StationSelectionRoute(
@@ -74,6 +78,8 @@ fun StationSelectionRoute(
         onSwap = viewModel::swapStations,
         onMessageShown = viewModel::clearMessage,
         onSearch = { viewModel.confirmSearch(onSearch) },
+        onRouteLaunch = { viewModel.launchRoute(it, onSearch) },
+        onToggleSavedRoute = viewModel::toggleSavedRoute,
     )
 }
 
@@ -88,6 +94,8 @@ fun StationSelectionScreen(
     onSwap: () -> Unit,
     onMessageShown: () -> Unit,
     onSearch: () -> Unit,
+    onRouteLaunch: (RouteShortcut) -> Unit = {},
+    onToggleSavedRoute: (RouteShortcut) -> Unit = {},
 ) {
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
 
@@ -111,11 +119,20 @@ fun StationSelectionScreen(
             )
         },
         snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) },
+        bottomBar = {
+            Column(Modifier.navigationBarsPadding().padding(horizontal = 24.dp, vertical = 16.dp)) {
+                Button(onClick = onSearch, enabled = uiState.canSearch,
+                    modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(18.dp)) {
+                    Text("도착 정보 확인", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        },
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp),
         ) {
             Spacer(Modifier.height(20.dp))
@@ -162,16 +179,30 @@ fun StationSelectionScreen(
                 )
             }
 
-            Spacer(Modifier.weight(1f))
-            Button(
-                onClick = onSearch,
-                enabled = uiState.canSearch,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(18.dp),
-            ) {
-                Text("도착 정보 확인", style = MaterialTheme.typography.titleMedium)
+            val selectedRoute = uiState.origin?.let { origin ->
+                uiState.destination?.let { destination -> RouteShortcut(origin, destination) }
+            }
+            TextButton(
+                onClick = { selectedRoute?.let(onToggleSavedRoute) },
+                enabled = selectedRoute != null && selectedRoute.origin.id != selectedRoute.destination.id && !uiState.isSavingRoute,
+                modifier = Modifier.align(Alignment.End),
+            ) { Text(if (selectedRoute in uiState.savedRoutes) "저장 해제" else "경로 저장") }
+            Text("저장한 경로", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            if (uiState.savedRoutes.isEmpty()) {
+                Text("출발역과 도착역을 선택하고 경로를 저장해 보세요.",
+                    modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            uiState.savedRoutes.forEach { route ->
+                RouteShortcutRow(route, true, !uiState.isSubmitting, !uiState.isSavingRoute,
+                    { onRouteLaunch(route) }, { onToggleSavedRoute(route) })
+            }
+            if (uiState.recommendedRoutes.isNotEmpty()) {
+                Spacer(Modifier.height(20.dp))
+                Text("자주 이용한 경로", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                uiState.recommendedRoutes.forEach { route ->
+                    RouteShortcutRow(route, false, !uiState.isSubmitting, !uiState.isSavingRoute,
+                        { onRouteLaunch(route) }, { onToggleSavedRoute(route) })
+                }
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -188,6 +219,26 @@ fun StationSelectionScreen(
             onDismiss = onCloseSelector,
         )
     }
+}
+
+@Composable
+private fun RouteShortcutRow(
+    route: RouteShortcut, saved: Boolean, canLaunch: Boolean, canSave: Boolean,
+    onLaunch: () -> Unit, onToggleSaved: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = canLaunch, onClick = onLaunch)
+            .semantics { contentDescription = "${route.origin.name}에서 ${route.destination.name} 도착 정보 바로 실행" }
+            .padding(vertical = 16.dp, horizontal = 8.dp)) {
+            Text("${route.origin.name} → ${route.destination.name}", fontWeight = FontWeight.SemiBold)
+        }
+        TextButton(onClick = onToggleSaved, enabled = canSave,
+            modifier = Modifier.semantics { contentDescription = "${route.origin.name} → ${route.destination.name} ${if (saved) "저장 해제" else "경로 저장"}" }) {
+            Text(if (saved) "저장 해제" else "저장")
+        }
+    }
+    HorizontalDivider()
 }
 
 @Composable

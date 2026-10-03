@@ -8,6 +8,11 @@ import com.gilbit.barota.data.repository.StationUsageRepository
 import com.gilbit.barota.data.model.StationUsage
 import com.gilbit.barota.data.model.StationUsageRole
 import com.gilbit.barota.domain.frequentStations
+import com.gilbit.barota.domain.RouteShortcut
+import com.gilbit.barota.domain.savedRouteShortcuts
+import com.gilbit.barota.domain.recommendedRouteShortcuts
+import com.gilbit.barota.data.model.StationPairUsage
+import com.gilbit.barota.data.model.SavedStationPair
 import com.gilbit.barota.domain.orderStationResults
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -27,6 +32,9 @@ data class StationSelectionUiState(
     val filteredStations: List<Station> = emptyList(),
     val frequentStations: List<Station> = emptyList(),
     val isSubmitting: Boolean = false,
+    val savedRoutes: List<RouteShortcut> = emptyList(),
+    val recommendedRoutes: List<RouteShortcut> = emptyList(),
+    val isSavingRoute: Boolean = false,
     val origin: Station? = null,
     val destination: Station? = null,
     val selectionTarget: SelectionTarget? = null,
@@ -42,11 +50,25 @@ class StationSelectionViewModel @Inject constructor(
     private val usageRepository: StationUsageRepository,
 ) : ViewModel() {
     private var usage: Map<String, StationUsage> = emptyMap()
+    private var pairs: List<StationPairUsage> = emptyList()
+    private var savedPairs: List<SavedStationPair> = emptyList()
     private val writes = Channel<suspend () -> Unit>(Channel.UNLIMITED)
     private val _uiState = MutableStateFlow(StationSelectionUiState())
     val uiState: StateFlow<StationSelectionUiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            try {
+                usageRepository.observePairs().collect { pairs = it; _uiState.update { refreshLists(it) } }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _uiState.update { it.copy(message = "경로 사용 이력을 불러오지 못했어요.") } }
+        }
+        viewModelScope.launch {
+            try {
+                usageRepository.observeSavedPairs().collect { savedPairs = it; _uiState.update { refreshLists(it) } }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _uiState.update { it.copy(message = "저장한 경로를 불러오지 못했어요.") } }
+        }
         viewModelScope.launch {
             for (write in writes) write()
         }
@@ -136,6 +158,35 @@ class StationSelectionViewModel @Inject constructor(
         if (!state.canSearch) return
         val origin = state.origin ?: return
         val destination = state.destination ?: return
+        executeSearch(origin, destination, onSearch)
+    }
+
+    fun launchRoute(route: RouteShortcut, onSearch: (Station, Station) -> Unit) {
+        val state = _uiState.value
+        if (state.isSubmitting || state.isLoading || route.origin.id == route.destination.id) return
+        val origin = state.stations.find { it.id == route.origin.id } ?: return
+        val destination = state.stations.find { it.id == route.destination.id } ?: return
+        _uiState.update { it.copy(origin = origin, destination = destination, message = null) }
+        executeSearch(origin, destination, onSearch)
+    }
+
+    fun toggleSavedRoute(route: RouteShortcut) {
+        val state = _uiState.value
+        if (state.isSavingRoute || route.origin.id == route.destination.id ||
+            state.stations.none { it.id == route.origin.id } || state.stations.none { it.id == route.destination.id }) return
+        val isSaved = savedPairs.any { it.originStationId == route.origin.id && it.destinationStationId == route.destination.id }
+        _uiState.update { it.copy(isSavingRoute = true) }
+        writes.trySend {
+            try {
+                if (isSaved) usageRepository.removeSavedPair(route.origin.id, route.destination.id)
+                else usageRepository.savePair(route.origin.id, route.destination.id, System.currentTimeMillis())
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _uiState.update { it.copy(message = "경로 저장 상태를 변경하지 못했어요.") } }
+            finally { _uiState.update { it.copy(isSavingRoute = false) } }
+        }
+    }
+
+    private fun executeSearch(origin: Station, destination: Station, onSearch: (Station, Station) -> Unit) {
         val usedAt = System.currentTimeMillis()
         _uiState.update { it.copy(isSubmitting = true) }
         writes.trySend {
@@ -155,6 +206,8 @@ class StationSelectionViewModel @Inject constructor(
     }
 
     private fun refreshLists(state: StationSelectionUiState) = state.copy(
+        savedRoutes = savedRouteShortcuts(state.stations, savedPairs),
+        recommendedRoutes = recommendedRouteShortcuts(state.stations, pairs, savedPairs),
         filteredStations = orderStationResults(state.stations, state.query, usage),
         frequentStations = frequentStations(state.stations, usage),
     )
